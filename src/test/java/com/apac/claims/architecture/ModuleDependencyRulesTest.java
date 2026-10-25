@@ -177,6 +177,10 @@ class ModuleDependencyRulesTest {
                 }
                 String targetPackage = target.getPackageName();
                 String layer = targetPackage.substring((BASE + "." + to).length());
+                // The composition root builds the request records of the services it calls (ADR 0014); nothing else.
+                if (from.equals("bootstrap") && (layer.equals(".api.dto") || layer.startsWith(".api.dto."))) {
+                    continue;
+                }
                 if (layer.equals(".api") || layer.startsWith(".api.") || layer.equals(".infrastructure")
                         || layer.startsWith(".infrastructure.")) {
                     violations.add(origin.getName() + " -> " + target.getName() + "  (module " + from + " uses the "

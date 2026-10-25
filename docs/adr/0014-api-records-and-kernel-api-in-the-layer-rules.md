@@ -1,7 +1,7 @@
-# ADR 0014: Two named exceptions to "service does not depend on api"
+# ADR 0014: Three named exceptions to the layer and module rules about the api packages
 
 - **Status:** Accepted
-- **Date:** 2026-10-25
+- **Date:** 2026-10-25 (the third exception was added in prompt 5)
 
 ## Context
 
@@ -13,12 +13,13 @@ Moving the 23 request and response records out of `api` is mechanically easy, bu
 
 ## Decision
 
-The layer rules keep their full strength except for two exceptions, each written out in the rule itself (`LayerRulesTest`, `ModuleDependencyRulesTest`):
+The layer rules keep their full strength except for three exceptions, each written out in the rule itself (`LayerRulesTest`, `ModuleDependencyRulesTest`):
 
-1. **Records of the module's own `api.dto` package.** A class in `<module>.service` may depend on classes in `<module>.api.dto`. It may not depend on any other class of `<module>.api` (a controller, a handler). Classes of `domain` and `infrastructure` may not depend on `api` at all, and nobody outside the module and its tests may use its `api` package or its `api.dto` package.
+1. **Records of the module's own `api.dto` package.** A class in `<module>.service` may depend on classes in `<module>.api.dto`. It may not depend on any other class of `<module>.api` (a controller, a handler). Classes of `domain` and `infrastructure` may not depend on `api` at all, and nobody outside the module and its tests may use its `api` package or its `api.dto` package, with the one exception of number 3.
 2. **The kernel `shared.api`.** Any module may use `shared.api`, because `shared` is the kernel. The rule "no module uses another module's `api` or `infrastructure` package" therefore does not look at `shared`.
+3. **The composition root builds the request records of the services it calls.** The module `bootstrap` (the demo-data and sample-claim seeders) may use the classes of `claim.api.dto`, because the services that it calls to create the sample claims, as a real user would, take those records as parameters. It may use nothing else of another module's `api` package, and no other module may use another module's `api.dto` (added in prompt 5, with the sample claims).
 
-No other exception exists. A new dependency that is not one of these two fails the build.
+No other exception exists. A new dependency that is not one of these three fails the build.
 
 ## Alternatives considered
 
