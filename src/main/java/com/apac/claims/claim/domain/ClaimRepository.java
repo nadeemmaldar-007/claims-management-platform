@@ -1,6 +1,7 @@
 package com.apac.claims.claim.domain;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
@@ -26,6 +27,15 @@ public interface ClaimRepository extends JpaRepository<Claim, Long>, JpaSpecific
     @Override
     @EntityGraph(attributePaths = {"claimant", "market", "assignedOfficer"})
     Page<Claim> findAll(@Nullable Specification<Claim> spec, Pageable pageable);
+
+    /**
+     * Every claim that matches, for the reports, which read all of them and add them up in memory. The market, the
+     * assigned officer and the person who decided are loaded in the same query, so the number of queries does not
+     * grow with the number of claims.
+     */
+    @Override
+    @EntityGraph(attributePaths = {"market", "assignedOfficer", "decidedBy"})
+    List<Claim> findAll(@Nullable Specification<Claim> spec);
 
     /** Duplicate check: same policy, incident date and type, ignoring claims in the given status (REJECTED). */
     boolean existsByPolicyNumberAndIncidentDateAndClaimTypeAndStatusNot(String policyNumber, LocalDate incidentDate,

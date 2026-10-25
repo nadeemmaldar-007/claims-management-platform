@@ -26,7 +26,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * The generated OpenAPI document describes the claims, policies and notifications endpoints completely: every path and method, the
+ * The generated OpenAPI document describes the claims, policies, notifications and reports endpoints completely: every path and method, the
  * idempotency header, the named examples (which must be valid requests), the status codes and the tags.
  */
 class ClaimsOpenApiTest extends AbstractApiTest {
@@ -61,6 +61,11 @@ class ClaimsOpenApiTest extends AbstractApiTest {
                 Arguments.of("/api/v1/notifications/unread-count", "get"),
                 Arguments.of("/api/v1/notifications/{id}/read", "post"),
                 Arguments.of("/api/v1/notifications/read-all", "post"),
+                Arguments.of("/api/v1/reports/overview", "get"),
+                Arguments.of("/api/v1/reports/exposure", "get"),
+                Arguments.of("/api/v1/reports/aging", "get"),
+                Arguments.of("/api/v1/reports/workload", "get"),
+                Arguments.of("/api/v1/reports/performance", "get"),
                 Arguments.of("/api/v1/claims/{claimNumber}/assessments", "post"),
                 Arguments.of("/api/v1/claims/{claimNumber}/assessments", "get"),
                 Arguments.of("/api/v1/claims/{claimNumber}/information-requests", "post"),
@@ -91,7 +96,8 @@ class ClaimsOpenApiTest extends AbstractApiTest {
         List<String> tags = JsonPath.read(apiDocs(), "$.paths['" + path + "']." + method + ".tags");
 
         String expected = path.startsWith("/api/v1/policies") ? "Policies"
-                : path.startsWith("/api/v1/notifications") ? "Notifications" : "Claims";
+                : path.startsWith("/api/v1/notifications") ? "Notifications"
+                : path.startsWith("/api/v1/reports") ? "Reports" : "Claims";
         assertThat(tags).containsExactly(expected);
     }
 
