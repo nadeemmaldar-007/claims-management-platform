@@ -1,0 +1,72 @@
+server:
+  port: ${SERVER_PORT:8080}
+spring:
+  application:
+    name: claims-management-platform
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:claims_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+logging:
+  pattern:
+    level: "%5p [%X{correlationId:-}]"
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
+      expiry-minutes: ${JWT_EXPIRY_MINUTES:120}
+      issuer: claims-management-platform
+  seed:
+    demo-data: ${SEED_DEMO_DATA:true}
+    sample-claims: ${SEED_SAMPLE_CLAIMS:true}
+  sla:
+    first-review-hours: 48
+    decision-hours: 240
+    information-request-default-days: 7
+  reporting:
+    base-currency: USD
+    rate-source: STATIC_ILLUSTRATIVE
+    rates:
+      INR: 0.012
+      SGD: 0.74
+      AUD: 0.65
+      JPY: 0.0067
+      MYR: 0.21
+      THB: 0.029
+  outbox:
+    relay:
+      enabled: true
+      poll-interval-ms: 1000
+      batch-size: 50
+      max-attempts: 5
+  integration:
+    payment:
+      simulate-failure: false
+  notification:
+    email:
+      enabled: true
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+    tags-sorter: alpha
+    operations-sorter: method

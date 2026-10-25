@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:claims_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+app:
+  security:
+    jwt:
+      secret: test-only-secret-0123456789abcdef0123456789
+  seed:
+    demo-data: true
+    sample-claims: false
+  outbox:
+    relay:
+      enabled: false
