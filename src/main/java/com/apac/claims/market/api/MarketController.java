@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** The markets with their currencies and escalation thresholds, readable by every logged-in user. */
 @RestController
 @RequestMapping("/api/v1/markets")
-@Tag(name = "Markets", description = "The six markets, their currencies and escalation thresholds.")
+@Tag(name = "Markets", description = "The six markets, their currencies and thresholds.")
 public class MarketController {
 
     private final MarketService marketService;
