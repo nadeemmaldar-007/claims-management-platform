@@ -16,6 +16,9 @@ Status: written at design stage (prompt 1) and updated in prompts 2 (data layer)
 - **One generic login failure.** Unknown user, wrong password, inactive account and wrong role all return the same 401 and the same message, so a caller cannot tell which accounts exist.
 - **The token's user is checked on every request.** A deleted or deactivated user is refused at once, on every protected endpoint; the role in the token is trusted until it expires.
 - **All time comes from a `Clock` bean,** so tests can control it.
+- **A manager can assign straight from the queue** (spec amendment, prompt 4). `assign` on a SUBMITTED claim behaves like a pick-up for the chosen officer; on UNDER_REVIEW, PENDING_INFORMATION and ESCALATED it is a reassignment that keeps the status.
+- **An incident date may be at most tomorrow in UTC** (spec amendment, prompt 4). A claimant in a market ahead of UTC reports an incident from "today", which is still tomorrow in UTC, so "not in the future" would wrongly refuse it.
+- **Delivery stages moved** (spec amendment, prompt 4): the policy endpoints and the write side of the outbox are built in prompt 4; the relay, notifications, the payment gateway and settlement stay in prompt 5.
 - **`identity` depends on `market`.** `app_users.market_id` is a foreign key to `markets`, so the dependency exists; the specification's dependency table was amended in prompt 3 to include it. It creates no cycle. See [docs/02-architecture.md](docs/02-architecture.md).
 
 ## The ten most important decisions

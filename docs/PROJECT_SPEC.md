@@ -71,7 +71,7 @@ This is the single source of truth for the implementation. Later work is done in
 | integration | shared, config, claim (implements claim's `PaymentGateway` port; dispatches shared events) |
 | bootstrap | every module (it only wires and seeds); nothing depends on it |
 
-identity depends on market because every user belongs to a market; market depends only on shared and config, so no cycle is created (amended in prompt 3).
+identity depends on market because claimants and officers belong to a market (`app_users.market_id`); managers are APAC-wide and have none; market depends only on shared and config, so no cycle is created (amended in prompt 3).
 
 Cross-module rules: a module may use another module's `service` classes and `domain` types, never its `api` or `infrastructure` packages. `claim` must not depend on `policy`, `notification`, `reporting` or `integration`; it reaches them only through ports it owns and through the shared event contracts.
 
@@ -134,6 +134,7 @@ Entity mapping rules: `@Enumerated(EnumType.STRING)`; associations `LAZY`; `spri
 |---|---|---|---|
 | (none) | submit | SUBMITTED | CLAIMANT |
 | SUBMITTED | pick-up | UNDER_REVIEW | OFFICER or MANAGER (sets assigned officer) |
+| SUBMITTED | assign (manager) | UNDER_REVIEW | MANAGER (assigns the claim to a chosen officer of the claim's market) |
 | UNDER_REVIEW | request information | PENDING_INFORMATION | assigned OFFICER or MANAGER |
 | PENDING_INFORMATION | claimant responds, or request cancelled, when no request is left OPEN | UNDER_REVIEW | CLAIMANT or staff |
 | UNDER_REVIEW | escalate | ESCALATED | assigned OFFICER |
@@ -143,9 +144,9 @@ Entity mapping rules: `@Enumerated(EnumType.STRING)`; associations `LAZY`; `spri
 | ESCALATED | approve or reject | APPROVED or REJECTED | MANAGER only |
 | APPROVED | settle | SETTLED | assigned OFFICER or MANAGER |
 
-REJECTED and SETTLED are final. Reassignment by a MANAGER is allowed in UNDER_REVIEW, PENDING_INFORMATION and ESCALATED, to an active OFFICER of the claim's market; it does not change the status.
+REJECTED and SETTLED are final. Reassignment by a MANAGER is allowed in UNDER_REVIEW, PENDING_INFORMATION and ESCALATED, to an active OFFICER of the claim's market; it does not change the status. A manager can therefore also assign work straight from the queue (the SUBMITTED row above), which behaves like a pick-up for the chosen officer (amended in prompt 4).
 
-**Submission validation (first notice of loss).** The claimant's market is the claim's market and currency. Fields: `claimType`, `policyNumber` (6 to 20 letters, digits, dashes), `claimedAmount` (> 0, at most 100000000, valid scale for the currency), `incidentDate` (not in the future, not older than 5 years), `incidentLocation` (max 200), `description` (10 to 1000 characters), plus exactly one block: `motor` {vehicleRegistrationNumber, vehicleMake, vehicleModel, vehicleYear (1980 to next year), damageType (COLLISION, THEFT, FIRE, FLOOD, VANDALISM, OTHER), policeReportNumber optional} for MOTOR, or `property` {propertyAddress, propertyType (RESIDENTIAL, COMMERCIAL, INDUSTRIAL), perilType (FIRE, FLOOD, STORM, THEFT, VANDALISM, OTHER)} for PROPERTY. A wrong or missing block is a 400. Through the `PolicyLookup` port the policy must exist and belong to the claimant (`POLICY_NOT_FOUND`), be ACTIVE and cover the incident date (`POLICY_NOT_ACTIVE`), match the claim type (`POLICY_TYPE_MISMATCH`), be in the claimant's market (`POLICY_MARKET_MISMATCH`), and `claimedAmount` must not exceed the sum insured (`AMOUNT_EXCEEDS_SUM_INSURED`); all are 422. A claim for the same policy, incident date and type that is not REJECTED is a 409 `DUPLICATE_CLAIM`. The sum insured and deductible are copied onto the claim.
+**Submission validation (first notice of loss).** The claimant's market is the claim's market and currency. Fields: `claimType`, `policyNumber` (6 to 20 letters, digits, dashes), `claimedAmount` (> 0, at most 100000000, valid scale for the currency), `incidentDate` (not in the future, not older than 5 years), `incidentLocation` (max 200), `description` (10 to 1000 characters), plus exactly one block: `motor` {vehicleRegistrationNumber, vehicleMake, vehicleModel, vehicleYear (1980 to next year), damageType (COLLISION, THEFT, FIRE, FLOOD, VANDALISM, OTHER), policeReportNumber optional} for MOTOR, or `property` {propertyAddress, propertyType (RESIDENTIAL, COMMERCIAL, INDUSTRIAL), perilType (FIRE, FLOOD, STORM, THEFT, VANDALISM, OTHER)} for PROPERTY. A wrong or missing block is a 400. Through the `PolicyLookup` port the policy must exist and belong to the claimant (`POLICY_NOT_FOUND`), be ACTIVE and cover the incident date (`POLICY_NOT_ACTIVE`), match the claim type (`POLICY_TYPE_MISMATCH`), be in the claimant's market (`POLICY_MARKET_MISMATCH`), and `claimedAmount` must not exceed the sum insured (`AMOUNT_EXCEEDS_SUM_INSURED`); all are 422. A claim for the same policy, incident date and type that is not REJECTED is a 409 `DUPLICATE_CLAIM`. The sum insured and deductible are copied onto the claim. The rule that `incidentDate` is "not in the future" is implemented as "not later than tomorrow in UTC": a claimant in a market ahead of UTC (for example AU or JP in the morning) reports an incident from today, which is still tomorrow in UTC (amended in prompt 4).
 
 **Idempotent submission.** `POST /claims` accepts an optional `Idempotency-Key` header (8 to 64 characters). The same key from the same user returns the original claim (200, header `Idempotent-Replay: true`) instead of creating a second one.
 
@@ -395,8 +396,8 @@ All tests run on H2 in PostgreSQL mode (profile `test`), without Docker. No `@Tr
 1. Setup, specification, design documents, scaffold (this prompt).
 2. Data layer: Flyway migrations V1 to V6, entities, repositories, shared kernel, market and identity domain, policy domain, seed initializer, repository tests, application context test.
 3. Security and identity: JWT, security chain, handlers, correlation id filter, global exception handler, auth and user endpoints, OpenAPI configuration, root redirect, tests.
-4. Claims core: workflow, claim numbers, submission with policy lookup, idempotency, queue, pick-up, assignment, assessment, information requests, decisions, timeline, tests, first ArchUnit rules.
-5. Integration: outbox, relay, notification module, payment gateway adapter, settlement, tests.
+4. Claims core: workflow, claim numbers, submission with policy lookup, idempotency, queue, pick-up, assignment, assessment, information requests, decisions, timeline, the policy endpoints (`/policies/...`), the write side of the outbox (`integration.service.OutboxDomainEventPublisher`), tests, first ArchUnit rules.
+5. Integration: the outbox relay, notification module, payment gateway adapter, settlement, tests.
 6. Reporting: overview, exposure, aging, workload, performance, tests; complete ArchUnit rules; JaCoCo gate; sample claims.
 7. Packaging and finish: Docker files, smoke script, OpenAPI contract export and its test, README (required headings), NOTES.md, interview guide, `prompts/README.md`, document reconciliation, final verification against a running app.
 

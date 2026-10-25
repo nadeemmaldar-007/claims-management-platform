@@ -84,7 +84,7 @@ These do not block the build. Each has a working assumption above or in the spec
 | 2 | Should the insurer track a separate reserve per claim? | No; outstanding exposure (open claimed amount plus approved awaiting payment) stands in |
 | 3 | Can a decided claim be appealed or re-opened? | No; REJECTED and SETTLED are final |
 | 4 | Are partial or staged payments needed? | No; one settlement per claim for the approved amount |
-| 5 | What does `POST /claims/{n}/assign` do on a claim still in SUBMITTED? The spec defines pick-up for that status and reassignment for later statuses | To be settled in the claims-core prompt; the likely reading is "assign on behalf of an officer, same effect as pick-up" |
+| 5 | What does `POST /claims/{n}/assign` do on a claim still in SUBMITTED? The spec defines pick-up for that status and reassignment for later statuses | Settled in prompt 4 (spec amendment): it assigns the claim to a chosen officer of the claim's market and behaves like a pick-up for that officer |
 | 6 | Should a reassignment notify the claimant? | No; the REASSIGNED timeline entry is internal, so no claimant-facing event is raised |
 | 7 | How long must outbox rows, idempotency keys and timelines be kept? | Not purged in this version; see the retention notes in [03-data-model.md](03-data-model.md) |
 | 8 | Which real channels (email, SMS) are needed for notifications? | In-app only, plus the logging channel |
