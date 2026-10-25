@@ -1,0 +1,39 @@
+# Local run of the application with its own PostgreSQL 17.
+# The database port is not published on the host, so this never clashes with a PostgreSQL that is already installed.
+# Start with:  docker compose up --build   (copy .env.example to .env first only if you want other values)
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: claims_db
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - claims_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d claims_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: claims_db
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      # Local development default (more than 32 bytes). Change it for anything that is not a local run.
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-0123456789abcdef}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+      SEED_SAMPLE_CLAIMS: ${SEED_SAMPLE_CLAIMS:-true}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  claims_pgdata:
