@@ -44,3 +44,7 @@ ArchUnit enforces the layer rules, including that `domain` has no dependency on 
 **Bad**
 - `domain` is tied to JPA and Spring Data annotations, so the domain is not framework-free. This is accepted and documented.
 - Without a mapping layer, entity changes can ripple into DTO mapping code.
+
+## Implementation note (prompt 6)
+
+The four layers are enforced by `LayerRulesTest` (15 rules). One consequence was found in prompt 3 and settled in prompt 4: the services build the response records, which live in `api.dto`, so `service` depends on that part of `api`. The rule keeps controllers out of reach and allows only the records of the module's own `api.dto`; with the kernel `shared.api` and the use of `claim.api.dto` by `bootstrap` these are the three named exceptions of [ADR 0014](0014-api-records-and-kernel-api-in-the-layer-rules.md). Repositories stayed in `domain` as decided, and the rule that `domain` has no web types holds.

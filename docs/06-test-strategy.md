@@ -1,6 +1,6 @@
 # 06. Test Strategy
 
-Status: **Planned** (no tests exist yet; each prompt adds the tests for its stage and fills in the test names in [requirements-traceability.md](requirements-traceability.md)).
+Status: **Implemented.** The tests of every prompt exist and run in `mvnw -B clean verify`; [requirements-traceability.md](requirements-traceability.md) names the test classes per requirement.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 13.
 
 ## 1. Principles
@@ -39,7 +39,7 @@ End-to-end journeys; security (401, 403, 404); validation and the error contract
 
 ### Architecture rules
 
-- Layer rules inside modules (`LayerRulesTest`), with the two named exceptions of [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md): a service may use the records of its own `api.dto`, and every module may use the kernel `shared.api`.
+- Layer rules inside modules (`LayerRulesTest`), with the three named exceptions of [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md): a service may use the records of its own `api.dto`, every module may use the kernel `shared.api`, and `bootstrap` may use `claim.api.dto`.
 - Modules are free of cycles, and every module depends only on what the table of the specification allows (`ModuleDependencyRulesTest`, table-driven).
 - No module depends on another module's `api` or `infrastructure` package.
 - `claim` does not depend on `policy`, `notification`, `reporting` or `integration`.
@@ -57,7 +57,7 @@ End-to-end journeys; security (401, 403, 404); validation and the error contract
 | Spring Boot Test, MockMvc, `spring-security-test` | Integration tests through the real security chain |
 | H2 in PostgreSQL mode | Database for all tests: `jdbc:h2:mem:claims_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1` |
 | ArchUnit (`archunit-junit5` 1.3.0) | Architecture rules |
-| JaCoCo 0.8.12 | Coverage report; the `check` rule is added in the reporting prompt |
+| JaCoCo 0.8.12 | Coverage report and the `check` rule that fails the build below 75% line coverage |
 
 `@MockBean` is not used (it is deprecated in Spring Boot 3.4 and later); tests use `@MockitoBean` where a bean must be replaced.
 
@@ -66,10 +66,10 @@ End-to-end journeys; security (401, 403, 404); validation and the error contract
 | Gate | Threshold | Enforced by |
 |---|---|---|
 | Build and tests | `mvnw -B clean verify` is green on JDK 21 | Maven |
-| Line coverage | At least 75% for the bundle, excluding DTO records, `config`, the main class and `package-info` | JaCoCo `check` rule (added in the reporting prompt) |
-| Test count | At least 80 test methods in total | Counted during the final verification |
+| Line coverage | At least 75% for the bundle, excluding DTO records, `config`, the main class and `package-info` | JaCoCo `check` rule in `pom.xml` (since prompt 5) |
+| Test count | At least 80 test methods in total | Counted from the source: 878 test methods in 82 classes |
 | Architecture | All ArchUnit rules pass | The ArchUnit test class, part of `verify` |
-| Contract | Committed OpenAPI file and live API document agree | A dedicated integration test |
+| Contract | Committed OpenAPI file and live API document agree | `OpenApiContractTest` |
 | Working tree | `git status` is clean after each stage | Checked by hand at the end of each prompt |
 
 ## 5. How to run everything
@@ -88,7 +88,7 @@ In Git Bash: `./mvnw -B clean verify`.
 | Tests only | `.\mvnw.cmd -B test` |
 | One test class | `.\mvnw.cmd -B test -Dtest=ClaimWorkflowTest` |
 | Coverage report | open `target/site/jacoco/index.html` after `verify` |
-| Smoke test against a running instance (last prompt) | `java scripts/SmokeTest.java http://localhost:8080` |
+| Smoke test against a running instance | `java scripts/SmokeTest.java http://localhost:8080` |
 
 The smoke script prints PASS or FAIL per step and exits with 1 on any failure. It covers health, login for each role, a wrong role (401), claim submission and idempotent replay, pick-up, assessment, information request and response, escalation, approval limit (422), manager approval, settlement, notifications, reports, scope (404) and validation (400).
 
@@ -105,13 +105,27 @@ The smoke script prints PASS or FAIL per step and exits with 1 on any failure. I
 | Generated or trivial code (DTO records, configuration records, `package-info`) | No logic to test; excluded from the coverage measure |
 | Time-of-day dependent behaviour with the real clock | Time-sensitive code (SLA, aging, overdue) takes a `Clock` so tests control time |
 
-## 7. Plan by prompt
+## 7. Tests added by prompt
 
 | Prompt | Tests added |
 |---|---|
 | 2 Data layer | Repository tests for constraints and queries, migration validation, application context test |
 | 3 Security and identity | Security and error-contract integration tests, JWT tests, auth and user endpoints, OpenAPI configuration |
-| 4 Claims core | **Delivered:** `ClaimWorkflow`, payout, claim number and event unit tests; integration tests for submission and validation, visibility and scope, pick-up and assignment (with real-thread races), assessments, information requests, decisions, the outbox write side, policies and the OpenAPI document; unit tests for the mapper, scope, authority, timeline and the lost-race translation; the first ArchUnit rules (module, layer and coding rules) |
-| 5 Integration | Outbox and relay tests, idempotent notifications, payment gateway adapter, settlement and failure |
-| 6 Reporting | Report scope and numbers, SLA and aging unit tests; complete ArchUnit rules; JaCoCo gate |
-| 7 Packaging | Contract test; smoke script run against the live application |
+| 4 Claims core | `ClaimWorkflow`, payout, claim number and event unit tests; integration tests for submission and validation, visibility and scope, pick-up and assignment (with real-thread races), assessments, information requests, decisions, the outbox write side, policies and the OpenAPI document; unit tests for the mapper, scope, authority, timeline and the lost-race translation; the first ArchUnit rules |
+| 5 Integration and reporting | Outbox relay tests (retry, backoff, `FAILED`, ordering), notification handler, service, channel and API tests, the simulated payment gateway and settlement including the gateway failure, the report calculators and the report API (scope and numbers), the sample-claims seeder, the complete ArchUnit rules (35), the JaCoCo gate, and the smoke script extension |
+| 6 Packaging and finish | `OpenApiContractTest` (the committed contract against the live document, and a control that shows the comparison reports both sides); the smoke script run twice against a fresh PostgreSQL database |
+
+## 8. Results
+
+Recorded in prompt 6 on a database that had just been dropped and created again, with JDK 21:
+
+| Check | Result |
+|---|---|
+| `mvnw -B clean verify` | BUILD SUCCESS: 1396 tests, 0 failures, 0 errors, 0 skipped |
+| JaCoCo line coverage | 95.58% (2379 of 2489 lines), gate 75%, "All coverage checks have been met" |
+| ArchUnit | 35 rules, all passing (`ModuleDependencyRulesTest` 14, `LayerRulesTest` 15, `CodingRulesTest` 6) |
+| Test classes | 82: 43 unit, 3 repository, 33 integration, 3 architecture |
+| Smoke script | 165 of 165 steps passed in each of two consecutive runs against the packaged jar on PostgreSQL 17.6; the second run is saved in [smoke-test-output.txt](smoke-test-output.txt) |
+| Application log of that run | 0 ERROR lines, no stack trace, no password, token or request body; 8 WARN lines, all of them the deliberate failed logins of the script (user id and requested role only) |
+
+`OpenApiContractTest` (2 test methods) was added after the full run above and was run on its own (2 passed); the final verification of prompt 6 includes it.

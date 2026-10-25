@@ -1,6 +1,6 @@
 # 04. API Design
 
-Status: **Implemented**, except that the committed contract `src/main/resources/openapi/claims-api.yaml` is exported from the running application in the last prompt. The error contract, correlation ids, the authentication, user and market endpoints and the health endpoint were built in prompt 3; the policy endpoints and the claim endpoints (submission, queue, pick-up, assignment, assessments, information requests, escalation, approval, rejection) in prompt 4; settlement, the notification endpoints and the five reports in prompt 5. The catalogue in section 4 has a Status column.
+Status: **Implemented.** The committed contract `src/main/resources/openapi/claims-api.yaml` (36 operations) was exported from the running application in prompt 6 and `OpenApiContractTest` keeps it equal to the live `/v3/api-docs`; the 36 operations of the contract are the rows of the catalogue in section 4 (the markets row covers two), plus `/actuator/health`, which is not part of the contract. The error contract, correlation ids, the authentication, user and market endpoints and the health endpoint were built in prompt 3; the policy endpoints and the claim endpoints (submission, queue, pick-up, assignment, assessments, information requests, escalation, approval, rejection) in prompt 4; settlement, the notification endpoints and the five reports in prompt 5. The catalogue in section 4 has a Status column.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 5, 6, 7.
 
 ## 1. Conventions
@@ -166,7 +166,7 @@ All paths are under `/api/v1` except `/actuator/health`. "Any" means any logged-
 | `GET /reports/performance?from=&to=&marketCode=` | OFFICER (own team), MANAGER | 200; 400 (`from` after `to`, bad date, unknown `marketCode`); 403 (claimant) | Implemented |
 | `GET /actuator/health` | public | 200 | Implemented |
 
-Also public: `GET /` (redirects to Swagger UI, hidden from OpenAPI), `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`.
+Also public: `GET /` (redirects to Swagger UI, hidden from OpenAPI), `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`. The last pattern covers the JSON document at `/v3/api-docs`; `/v3/api-docs.yaml` is not under that path and needs a bearer token (found while exporting the contract).
 
 Routing note: `GET /claims/queue` is a literal path and must win over `GET /claims/{claimNumber}`. A test covers this.
 
@@ -230,7 +230,7 @@ stateDiagram-v2
 
 ## 6. Examples of the main flows
 
-Claim numbers below are illustrative. The real numbers on a fresh database are confirmed during verification in the last prompt.
+Claim numbers in the examples below are illustrative. On a fresh database the seeder creates `CLM-10001` (submitted), `CLM-10002` (escalated), `CLP-10001` (under review) and `CLP-10002` (approved), and the next new claims are `CLM-10003` and `CLP-10003` (observed in the final verification of prompt 6).
 
 ### 6.1 Login
 

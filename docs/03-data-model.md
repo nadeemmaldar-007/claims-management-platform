@@ -1,6 +1,6 @@
 # 03. Data Model
 
-Status: **Implemented** in prompt 2. Migrations `V1` to `V6`, the entities and the repositories are built and were checked on H2 in PostgreSQL mode and on PostgreSQL 17.6 (section 7 lists what was verified and where the build differs from the first draft of this document).
+Status: **Implemented** in prompt 2 and used unchanged by prompts 3 to 6. Migrations `V1` to `V6`, the entities and the repositories are built and were checked on H2 in PostgreSQL mode and on PostgreSQL 17.6 (section 7 lists what was verified and where the build differs from the first draft of this document; section 9 records the final run on a fresh database).
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 4.
 
 ## 1. Conventions
@@ -336,7 +336,7 @@ Prompt 4 changed no migration and no entity column: `V1` to `V6` are untouched. 
 | Table | What the claims core does |
 |---|---|
 | `claim_counters` | `ClaimNumberGenerator.next(type)` reads the row of the claim type with a pessimistic write lock (`@Transactional(MANDATORY)`) and increments `next_value`. The number is taken only after every validation of the request has passed, so a refused submission never uses a number. The format is `CLM-<n>` for motor and `CLP-<n>` for property |
-| `claims` | A claim is inserted as `SUBMITTED` with the policy figures copied from the policy at that moment (`policy_sum_insured`, `policy_deductible`), the market and currency of the claimant, and the motor or the property columns, never both. Pick-up and assignment set `assigned_officer_id` and `assigned_at` and move the claim to `UNDER_REVIEW`; a reassignment changes both columns and keeps the status. Approval sets `decision_type` `APPROVED`, `decided_by_id`, `decided_at`, `decision_remarks` and `approved_amount`; rejection sets `decision_type` `REJECTED`, `decision_reason` and `decision_remarks`, and leaves `approved_amount` empty. The settlement columns stay empty until prompt 5. `version` is managed by Hibernate and is what decides two simultaneous pick-ups |
+| `claims` | A claim is inserted as `SUBMITTED` with the policy figures copied from the policy at that moment (`policy_sum_insured`, `policy_deductible`), the market and currency of the claimant, and the motor or the property columns, never both. Pick-up and assignment set `assigned_officer_id` and `assigned_at` and move the claim to `UNDER_REVIEW`; a reassignment changes both columns and keeps the status. Approval sets `decision_type` `APPROVED`, `decided_by_id`, `decided_at`, `decision_remarks` and `approved_amount`; rejection sets `decision_type` `REJECTED`, `decision_reason` and `decision_remarks`, and leaves `approved_amount` empty. The settlement columns stay empty until the claim is settled (section 9). `version` is managed by Hibernate and is what decides two simultaneous pick-ups |
 | `claim_assessments` | One row per assessment, never updated. `deductible_applied` is the claim's `policy_deductible`; `recommended_payout` is computed by the system. The newest row (highest `id`) is the one that counts |
 | `information_requests` | `OPEN` on creation with `due_at`; `RESPONDED` with `response_text`, `responded_by_id` and `responded_at`; or `CANCELLED`. Whether a request is overdue is worked out when it is read, from `status` and `due_at`, and is not stored |
 | `claim_timeline_entries` | Written only by `TimelineService`, inside the transaction of the change it describes. `from_status` is empty when the status did not change; `to_status` is always filled. `actor_user_id` is the user id of whoever acted. `message` is cut at 1000 characters. Assessments and reassignments are `INTERNAL`, everything else `PUBLIC` |
@@ -344,3 +344,21 @@ Prompt 4 changed no migration and no entity column: `V1` to `V6` are untouched. 
 | `outbox_events` | `OutboxDomainEventPublisher` writes one `PENDING` row per event, in the transaction of the state change, with the whole envelope as JSON in `payload` (event id, type, aggregate, time, version, payload; at most 8000 characters). `aggregate_id` is the claim number |
 
 The `claim` module reaches policy data only through the `PolicyLookup` port, so it never reads the `policies` table itself.
+
+## 9. As built: settlement, notifications and the final run (prompts 5 and 6)
+
+No migration changed after prompt 2: `git log` of `src/main/resources/db/migration` shows the six files in one commit and nothing since. This section records how the later prompts fill the tables.
+
+| Table | What the code does |
+|---|---|
+| `claims` (settlement columns) | `ClaimSettlementService` sets `payment_method`, `payment_reference`, `settled_amount` (the approved amount) and `settled_at` and moves the claim to `SETTLED`, but only after the payment gateway has answered |
+| `payment_instructions` | One row per settled claim, written by `SimulatedPaymentGateway` in its own transaction (`REQUIRES_NEW`): unique `claim_number`, `reference` of the form `PAY-` plus 12 upper-case hexadecimal characters, status `COMPLETED`. The CHECK constraint allows `INITIATED`, `COMPLETED` and `FAILED`; a payment that was recorded stays recorded if the claim transaction then rolls back, and a retry finds the row by claim number and returns the same reference |
+| `outbox_events` | The relay reads `PENDING` rows whose `next_attempt_at` has passed, oldest first, and sets `PROCESSED` and `processed_at` after every handler succeeded. A failure adds one to `attempts`, stores the exception class and message (never the payload) in `last_error` and moves `next_attempt_at` by 2 to the power of `attempts` seconds; the row stays `PENDING` until `attempts` reaches the maximum (5), then it becomes `FAILED` |
+| `notifications` | One row per recipient and event, written by `NotificationEventHandler` from the event payload. The unique `(source_event_id, recipient_id)` makes a second delivery of the same event create nothing; the insert runs in its own transaction so a duplicate cannot spoil the relay's transaction |
+
+**Final run on a fresh database (prompt 6).** `claims_db` was dropped and created again (empty, 0 tables), then the packaged jar was started on JDK 21 against PostgreSQL 17.6:
+
+- Flyway validated and applied 6 migrations ("now at version v6"); `flyway_schema_history` has six successful rows.
+- `DataInitializer`: markets 6, users 13, policies 13. `SampleClaimSeeder`: `CLM-10001` (submitted), `CLM-10002` (escalated), `CLP-10001` (under review) and `CLP-10002` (approved).
+- Before anything else touched the data, `claim_counters` held `next_value` 10003 for both `MOTOR` and `PROPERTY`, so the next new claims are `CLM-10003` and `CLP-10003`.
+- Hibernate `validate` accepted every entity; the application started in 11.3 seconds with no ERROR line in the log.

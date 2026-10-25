@@ -33,3 +33,7 @@ When an officer needs more from a claimant, the claimant has to answer. In pract
 - Claimants cannot provide photographs or documents, which limits realism for motor and property claims.
 - Evidence has to be handled outside the platform until the storage port is added.
 - Adding attachments later needs a migration, a port with an adapter, new endpoints and a security review.
+
+## Implementation note (prompt 6)
+
+Unchanged by the build. Information requests and responses are text (`question` 10 to 1000 characters, `responseText` 10 to 2000), and the claimant's answer returns the claim to review. A storage port in `claim` would be the extension point for attachments; none was built.

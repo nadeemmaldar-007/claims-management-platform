@@ -1,6 +1,6 @@
 # 01. Problem Analysis
 
-Status: **Planned** (nothing is implemented yet; this document describes the problem the platform solves).
+Status: **Implemented.** The platform described here is built (prompts 2 to 6); this document records the problem, the personas, the scope and the assumptions that the build kept to. Where the build settled an open question, the table in section 6 says so.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## 1. The business problem

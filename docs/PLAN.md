@@ -1,27 +1,28 @@
 # Delivery Plan
 
-Status: prompts 1 to 3 are complete (design, scaffold, data layer, security and identity). Prompts 4 to 7 are **Planned**.
+Status: **All six prompts are complete** (design and scaffold, data layer, security and identity, claims core, integration and reporting, packaging and finish). The plan began with seven prompts; prompt 5 merged integration and reporting (see section 2).
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 16.
 
 ## 1. Delivery approach
 
-1. **Design first.** Prompt 1 turns the specification into design documents and decision records before any business code exists. The documents are written as **Planned** and are reconciled with the code in the last prompt.
-2. **Vertical slices in a fixed order.** Each later prompt delivers one slice (data, security, claims, integration, reporting, packaging) that builds, is tested and is committed before the next starts.
+1. **Design first.** Prompt 1 turned the specification into design documents and decision records before any business code existed. The documents were written as **Planned** and were reconciled with the code in prompts 2 to 6.
+2. **Vertical slices in a fixed order.** Each later prompt delivers one slice (data, security, claims, integration and reporting, packaging) that builds, is tested and is committed before the next starts.
 3. **Verified before the next.** A prompt is complete only when the definition of done (section 6) holds. Nothing is reported as working unless it was run and the output was seen.
 4. **Small, conventional commits.** One or more focused commits per stage with conventional prefixes (`chore`, `docs`, `feat`, `test`, `fix`). No remote is added and nothing is pushed.
 5. **Resumable.** The stage log in `.claude/ai-journal.md` records what is done, so work can resume at the next stage in a fresh session.
 
-## 2. Milestones: the seven prompts
+## 2. Milestones: the six prompts
 
-| # | Prompt file | Goal | Main outputs |
-|---|---|---|---|
-| 1 | `prompt-01-setup-spec-design-scaffold.md` | Repository, specification, design documents, buildable scaffold | Git repository, `docs/PROJECT_SPEC.md`, design documents, ADRs, `NOTES.md`, `pom.xml`, Maven Wrapper, configuration, `package-info.java` per module; `mvnw -B clean verify` succeeds |
-| 2 | `prompt-02-data-layer.md` | Persistence | Flyway `V1` to `V6`, entities, repositories, shared kernel, market, identity and policy domain, `DataInitializer`, repository tests, application context test |
-| 3 | `prompt-03-security-and-identity.md` | Access control and the error contract | JWT, security chain, 401 and 403 handlers, correlation id filter, `GlobalExceptionHandler`, auth and user endpoints, OpenAPI configuration, root redirect, tests |
-| 4 | `prompt-04-claims-core.md` | The workflow | `ClaimWorkflow`, claim numbers, submission with policy lookup, idempotency, queue, pick-up, assignment, assessment, information requests, decisions, timeline, tests, first ArchUnit rules |
-| 5 | `prompt-05-integration.md` | Events and external systems | Outbox, relay, notification module, payment gateway adapter, settlement, tests |
-| 6 | `prompt-06-reporting.md` | Read side | Overview, exposure, aging, workload, performance, tests; complete ArchUnit rules; JaCoCo gate; sample claims |
-| 7 | `prompt-07-packaging-and-finish.md` | Packaging and reconciliation | `Dockerfile`, `docker-compose.yml`, smoke script, OpenAPI contract export and its test, README with required headings, `prompts/README.md`, interview guide, document reconciliation, final verification against a running application |
+The first plan had seven prompts (integration, reporting and packaging were three). In prompt 5 the integration and reporting prompts were merged and the packaging prompt became prompt 6; the specification (section 16) was amended and the smoke script moved to prompt 5.
+
+| # | Prompt file | Goal | Main outputs | State |
+|---|---|---|---|---|
+| 1 | `prompt-01-setup-spec-design-scaffold.md` | Repository, specification, design documents, buildable scaffold | Git repository, `docs/PROJECT_SPEC.md`, design documents, ADRs, `NOTES.md`, `pom.xml`, Maven Wrapper, configuration, `package-info.java` per module; `mvnw -B clean verify` succeeds | Done |
+| 2 | `prompt-02-data-layer.md` | Persistence | Flyway `V1` to `V6`, entities, repositories, shared kernel, market, identity and policy domain, `DataInitializer`, repository tests, application context test | Done |
+| 3 | `prompt-03-security-and-identity.md` | Access control and the error contract | JWT, security chain, 401 and 403 handlers, correlation id filter, `GlobalExceptionHandler`, auth and user endpoints, OpenAPI configuration, root redirect, tests, the first smoke script | Done |
+| 4 | `prompt-04-claims-core.md` | The workflow | `ClaimWorkflow`, claim numbers, submission with policy lookup, idempotency, queue, pick-up, assignment, assessment, information requests, decisions, timeline, policy endpoints, the write side of the outbox, tests, first ArchUnit rules | Done |
+| 5 | `prompt-05-integration-and-reporting.md` | Events, external systems and the read side | Outbox relay, notification module, payment gateway adapter, settlement, the five reports, four sample claims, complete ArchUnit rules, JaCoCo gate, smoke script extension, tests | Done |
+| 6 | `prompt-06-packaging-and-finish.md` | Packaging and reconciliation | `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example`, verification on a fresh database, OpenAPI contract export and its test, README with the required headings, interview guide, document reconciliation, final checks | Done |
 
 ## 3. Assumptions
 
@@ -40,7 +41,7 @@ Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 16
 | 2 | `mvn` is not installed | No way to run the first build | Generate the Maven Wrapper once with IntelliJ's bundled Maven, then use only the wrapper |
 | 3 | Dependencies cannot be downloaded (proxy or mirror) | Build blocked | Stop and ask with the exact error; never invent proxy settings |
 | 4 | H2 behaves differently from PostgreSQL | Tests pass but production fails | Portable SQL only; Flyway runs on both; final verification runs the live application on PostgreSQL 17 |
-| 5 | Module boundaries erode or cycles appear | The modular monolith turns into a tangle | ArchUnit rules from prompt 4 on, completed in prompt 6; a rule is never deleted silently |
+| 5 | Module boundaries erode or cycles appear | The modular monolith turns into a tangle | ArchUnit rules from prompt 4 on, completed in prompt 5 (35 rules); a rule is never deleted silently; three narrow exceptions are written down in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md) |
 | 6 | Race conditions on pick-up, claim numbers or settlement | Two officers on one claim, duplicate numbers, double payment | Optimistic lock on `Claim`, row-locked counters, idempotent payment adapter, tests for the race |
 | 7 | JWT misconfiguration (decoder defaults to RS256, null claim values, short secret) | Authentication fails or is weak | Exact wiring from the specification, fail-fast on a short secret, tests that log in through the real endpoint |
 | 8 | `AccessDeniedException` is swallowed by the catch-all handler and becomes a 500 | Wrong status for forbidden calls | A dedicated handler and a test for it |

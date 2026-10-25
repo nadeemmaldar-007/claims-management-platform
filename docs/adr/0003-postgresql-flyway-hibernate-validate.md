@@ -38,3 +38,7 @@ Claims are financial records that need transactions, constraints and a schema th
 - Portable SQL rules out some PostgreSQL features (JSONB, partial indexes), so the outbox payload is a bounded `VARCHAR(8000)`.
 - Adding an enum value needs a migration that changes the `CHECK` constraint.
 - H2 can accept SQL that PostgreSQL rejects or the reverse; the final verification therefore runs the application on PostgreSQL 17.
+
+## Implementation note (prompt 6)
+
+The migrations `V1` to `V6` were committed once in prompt 2 and never edited afterwards (`git log` of the migration folder shows one commit). In prompt 6 the database `claims_db` was dropped and created again, and the packaged application applied all six migrations to the empty database ("now at version v6") with Hibernate `validate` accepting every entity; the same migrations also run on H2 in all tests. No migration was needed after prompt 2, which suggests that the schema chosen at design time was right, but the verification is limited: tests run on H2, and PostgreSQL 17.6 was exercised by running the application and the smoke script sequentially, not under concurrent load.

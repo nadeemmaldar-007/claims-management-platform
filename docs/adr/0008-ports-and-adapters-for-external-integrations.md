@@ -43,7 +43,7 @@ The payment gateway is called **before** the claim change is committed; if it fa
 
 ## Implementation note (prompt 4)
 
-`PolicyLookup` and its `PolicyView` live in `claim.service`; the adapter is `policy.infrastructure.PolicySnapshotLookup`. `PolicyView` carries its own status enum and uses claim's own `ClaimType` for the product type, so `claim` imports nothing from `policy` and the module rule that forbids it holds. The two other ports (`PaymentGateway`, `NotificationChannel`) are built in prompt 5.
+`PolicyLookup` and its `PolicyView` live in `claim.service`; the adapter is `policy.infrastructure.PolicySnapshotLookup`. `PolicyView` carries its own status enum and uses claim's own `ClaimType` for the product type, so `claim` imports nothing from `policy` and the module rule that forbids it holds. The two other ports (`PaymentGateway`, `NotificationChannel`) were built in prompt 5.
 
 ## Implementation note (prompt 5)
 

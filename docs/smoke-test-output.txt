@@ -1,0 +1,188 @@
+Smoke test against http://localhost:8080
+
+-- Health, documentation and redirect
+PASS  health is UP -> 200
+PASS    body of 'health is UP' contains "status":"UP"
+PASS  Swagger UI is reachable -> 200
+PASS  OpenAPI document has the bearer scheme and the CLAIMANT role -> 200
+PASS    body of 'OpenAPI document has the bearer scheme and the CLAIMANT role' contains bearerAuth
+PASS    body of 'OpenAPI document has the bearer scheme and the CLAIMANT role' contains CLAIMANT
+PASS  GET / redirects -> 302
+PASS  GET / redirects to the Swagger UI
+-- Login with each role
+PASS  login as claimant.in (CLAIMANT) -> 200
+PASS    login response names the role CLAIMANT
+PASS  login as officer.in (OFFICER) -> 200
+PASS    login response names the role OFFICER
+PASS  login as manager.apac (MANAGER) -> 200
+PASS    login response names the role MANAGER
+-- Login failures are all 401
+PASS  claimant credentials with the OFFICER role -> 401
+PASS  officer credentials with the MANAGER role -> 401
+PASS  manager credentials with the CLAIMANT role -> 401
+PASS  wrong password -> 401
+PASS    body of 'wrong password' contains Invalid user ID, password or role
+PASS  unknown role value is a bad request -> 400
+PASS    body of 'unknown role value is a bad request' contains CLAIMANT, OFFICER, MANAGER
+-- Tokens
+PASS  /users/me without a token -> 401
+PASS    body of '/users/me without a token' contains UNAUTHENTICATED
+PASS  the 401 carries a correlation id header
+PASS  /users/me as the claimant -> 200
+PASS    body of '/users/me as the claimant' contains claimant.in
+PASS  /users/me as the officer -> 200
+PASS    body of '/users/me as the officer' contains officer.in
+PASS  /users/me as the manager -> 200
+PASS    body of '/users/me as the manager' contains manager.apac
+-- Authorization and user management
+PASS  a claimant cannot create users -> 403
+PASS  a manager creates an officer -> 201
+PASS    body of 'a manager creates an officer' contains smoke.off.b4c9c92bf9
+PASS    body of 'a manager creates an officer' contains "role":"OFFICER"
+PASS  login as smoke.off.b4c9c92bf9 (OFFICER) -> 200
+PASS    login response names the role OFFICER
+-- Registration
+PASS  a new claimant registers -> 201
+PASS    body of 'a new claimant registers' contains smoke.clm.fa23c7b565
+PASS    body of 'a new claimant registers' contains "role":"CLAIMANT"
+PASS  login as smoke.clm.fa23c7b565 (CLAIMANT) -> 200
+PASS    login response names the role CLAIMANT
+PASS  a weak password is rejected -> 400
+PASS    body of 'a weak password is rejected' contains errors
+PASS    body of 'a weak password is rejected' contains password
+-- Markets
+PASS  markets are listed with their currencies -> 200
+PASS    body of 'markets are listed with their currencies' contains INR
+PASS    body of 'markets are listed with their currencies' contains JPY
+-- Claims: log in as the seeded claimants, officers and the manager
+PASS  login as claimant.in (CLAIMANT) -> 200
+PASS  login as claimant.sg (CLAIMANT) -> 200
+PASS  login as officer.in (OFFICER) -> 200
+PASS  login as officer.sg (OFFICER) -> 200
+PASS  login as manager.apac (MANAGER) -> 200
+-- Policies
+PASS  claimant.in lists the own policies -> 200
+PASS    body of 'claimant.in lists the own policies' contains MOT-IN-0001
+-- Submission, validation and idempotency
+PASS  claimant.in submits a MOTOR claim of 45000.00 -> 201
+PASS    the claim number CLM-10006 has the form CLM-nnnnn
+PASS  the same Idempotency-Key replays the claim -> 200
+PASS    the claim number CLM-10006 has the form CLM-nnnnn
+PASS    the replay returns the same claim number CLM-10006
+PASS    the replay carries Idempotent-Replay: true
+PASS  claimant.sg submits a PROPERTY claim of 25000.00 -> 201
+PASS    the claim number CLP-10005 has the form CLP-nnnnn
+PASS  the lapsed policy MOT-IN-0002 is refused -> 422
+PASS    body of 'the lapsed policy MOT-IN-0002 is refused' contains POLICY_NOT_ACTIVE
+PASS  an amount above the sum insured is refused -> 422
+PASS    body of 'an amount above the sum insured is refused' contains AMOUNT_EXCEEDS_SUM_INSURED
+PASS  a MOTOR claim with a property block is a bad request -> 400
+PASS    body of 'a MOTOR claim with a property block is a bad request' contains VALIDATION_FAILED
+-- Scope: nobody sees the claims of another claimant or market
+PASS  claimant.in reading the SG claim -> 404
+PASS  officer.sg reading the IN claim -> 404
+-- Queue and pick-up
+PASS  claimant.in cannot read the queue -> 403
+PASS  the IN officer's queue contains CLM-10006
+PASS  officer.sg cannot pick up the IN claim -> 404
+PASS  officer.in picks up the claim -> 200
+PASS    body of 'officer.in picks up the claim' contains UNDER_REVIEW
+PASS    body of 'officer.in picks up the claim' contains officer.in
+PASS  the manager picking it up again is told it is taken -> 409
+PASS    body of 'the manager picking it up again is told it is taken' contains CLAIM_ALREADY_ASSIGNED
+-- Assessment and information request
+PASS  officer.in assesses a loss of 44000.00 -> 201
+PASS    body of 'officer.in assesses a loss of 44000.00' contains "recommendedPayout":39000.00
+PASS    body of 'officer.in assesses a loss of 44000.00' contains "deductibleApplied":5000.00
+PASS  officer.in asks for the repair estimate -> 201
+PASS    body of 'officer.in asks for the repair estimate' contains "status":"OPEN"
+PASS  claimant.in answers the request -> 200
+PASS    body of 'claimant.in answers the request' contains "status":"UNDER_REVIEW"
+PASS  the claimant reads the timeline -> 200
+PASS    body of 'the claimant reads the timeline' contains INFORMATION_PROVIDED
+PASS    the claimant's timeline has no INTERNAL entry
+PASS    and no staff user id
+-- Approval limit, escalation and the manager's decision
+PASS  claimant.in submits a second MOTOR claim of 1200000.00 -> 201
+PASS    the claim number CLM-10007 has the form CLM-nnnnn
+PASS  officer.in picks it up -> 200
+PASS  officer.in assesses a loss of 1200000.00 -> 201
+PASS    body of 'officer.in assesses a loss of 1200000.00' contains "recommendedPayout":1195000.00
+PASS  officer.in approving above the IN threshold is refused -> 422
+PASS    body of 'officer.in approving above the IN threshold is refused' contains APPROVAL_LIMIT_EXCEEDED
+PASS  officer.in escalates the claim -> 200
+PASS    body of 'officer.in escalates the claim' contains ESCALATED
+PASS  officer.in cannot approve the escalated claim -> 403
+PASS    body of 'officer.in cannot approve the escalated claim' contains escalated
+PASS  the manager approves the escalated claim -> 200
+PASS    body of 'the manager approves the escalated claim' contains "status":"APPROVED"
+PASS    body of 'the manager approves the escalated claim' contains 1195000.00
+-- Policy maintenance by the manager
+PASS  the manager creates policy MOT-IN-1C8331 for claimant.in -> 201
+PASS    body of 'the manager creates policy MOT-IN-1C8331 for claimant.in' contains MOT-IN-1C8331
+PASS  a claimant cannot create a policy -> 403
+-- Reject, then resubmit the same policy and day
+PASS  officer.sg picks up the SG claim -> 200
+PASS  officer.sg rejects it with a reason code -> 200
+PASS    body of 'officer.sg rejects it with a reason code' contains "status":"REJECTED"
+PASS    body of 'officer.sg rejects it with a reason code' contains NOT_COVERED
+PASS  the same policy and day are accepted again after the rejection -> 201
+PASS    body of 'the same policy and day are accepted again after the rejection' contains CLP-
+-- Settlement: a fresh claim from submission to payment
+PASS  login as claimant.in (CLAIMANT) -> 200
+PASS  login as officer.in (OFFICER) -> 200
+PASS  login as manager.apac (MANAGER) -> 200
+PASS  claimant.in submits a MOTOR claim of 30000.00 -> 201
+PASS    the claim number CLM-10008 has the form CLM-nnnnn
+PASS  officer.in picks it up -> 200
+PASS  officer.in assesses a loss of 29000.00 -> 201
+PASS    body of 'officer.in assesses a loss of 29000.00' contains "recommendedPayout":24000.00
+PASS  the manager approves the claim -> 200
+PASS    body of 'the manager approves the claim' contains "status":"APPROVED"
+PASS  the manager settles the claim -> 200
+PASS    body of 'the manager settles the claim' contains "status":"SETTLED"
+PASS    body of 'the manager settles the claim' contains "settlement"
+PASS    body of 'the manager settles the claim' contains "settledAmount":24000.00
+PASS    the settlement carries a payment reference of the form PAY- and twelve hexadecimal characters
+PASS  settling the same claim again is a conflict -> 409
+PASS    body of 'settling the same claim again is a conflict' contains CLAIM_INVALID_TRANSITION
+PASS  the claimant cannot settle -> 403
+-- Notifications reach the claimant through the outbox relay
+PASS  a notification about CLM-10008 of type CLAIM_APPROVED or CLAIM_SETTLED arrives within 15 seconds
+PASS  the claimant's unread count -> 200
+PASS    body of 'the claimant's unread count' contains unreadCount
+PASS    the unread count is greater than 0
+PASS  the claimant lists the own notifications -> 200
+PASS    body of 'the claimant lists the own notifications' contains "claimNumber"
+PASS  the claimant marks one notification as read -> 200
+PASS    body of 'the claimant marks one notification as read' contains "read":true
+PASS  the claimant marks all notifications as read -> 200
+PASS    body of 'the claimant marks all notifications as read' contains "updated"
+PASS  the unread count afterwards -> 200
+PASS    body of 'the unread count afterwards' contains "unreadCount":0
+PASS    nothing is unread
+PASS  another user's notification id is not found -> 404
+-- Reports
+PASS  the manager reads the overview -> 200
+PASS    body of 'the manager reads the overview' contains countsByStatus
+PASS    body of 'the manager reads the overview' contains SETTLED
+PASS    body of 'the manager reads the overview' contains queueSize
+PASS  the manager reads the exposure with the rate source -> 200
+PASS    body of 'the manager reads the exposure with the rate source' contains STATIC_ILLUSTRATIVE
+PASS    body of 'the manager reads the exposure with the rate source' contains outstandingExposureBase
+PASS  the manager reads the aging -> 200
+PASS    body of 'the manager reads the aging' contains 15+ days
+PASS  the manager reads the workload -> 200
+PASS    body of 'the manager reads the workload' contains officer.in
+PASS    body of 'the manager reads the workload' contains unassignedInQueue
+PASS  the manager reads the performance -> 200
+PASS    body of 'the manager reads the performance' contains officer.in
+PASS    body of 'the manager reads the performance' contains approvalRate
+PASS  a period that ends before it starts is a bad request -> 400
+PASS    body of 'a period that ends before it starts is a bad request' contains VALIDATION_FAILED
+PASS  officer.in reads the overview of the own market -> 200
+PASS    body of 'officer.in reads the overview of the own market' contains countsByStatus
+PASS  officer.in cannot read the exposure -> 403
+PASS  the claimant cannot read the overview -> 403
+
+Smoke test finished: 165 passed, 0 failed

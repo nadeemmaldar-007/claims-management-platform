@@ -36,3 +36,7 @@ The build and every test must run on a machine without Docker. Testcontainers is
 - H2 is not PostgreSQL. Differences, for example in locking behaviour or in how some SQL is parsed, are not caught by the tests. The portable-SQL rule reduces the risk and the final verification on PostgreSQL 17 covers the rest, but there is no automated PostgreSQL test.
 - Concurrency behaviour such as the pessimistic lock on claim counters is verified on H2 only.
 - The Docker files cannot be tested at all on this machine.
+
+## Implementation note (prompt 6)
+
+The strategy worked as designed: `mvnw -B clean verify` runs 1396 tests (0 failures) on H2 with no Docker and no PostgreSQL, with 95.58 percent line coverage against the 75 percent gate, and `OpenApiContractTest` was added afterwards. The consequences listed above are real: the database keeps timestamps to the microsecond, which exposed a mismatch between the nanosecond time a notification returned and the microsecond time read back (a defect, fixed in the code), and H2 rounds a stored timestamp, which needed a documented one-microsecond tolerance in one relay test; concurrency was tested with real threads on H2 only. The application and the smoke script (165 steps, two runs) were run on PostgreSQL 17.6 by hand during the final verification. There is no automated PostgreSQL test and the Docker files were never executed.

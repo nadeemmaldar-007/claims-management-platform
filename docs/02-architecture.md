@@ -1,6 +1,6 @@
 # 02. Architecture
 
-Status: **Implemented.** All eleven modules are built (prompts 2 to 5). The Docker files, the committed OpenAPI contract and the full reconciliation of the documents come in the last prompt.
+Status: **Implemented.** All eleven modules are built (prompts 2 to 5); the Docker files, the committed OpenAPI contract and the final reconciliation of the documents were added in prompt 6. The Docker files were reviewed but never executed (Docker is not installed on the development machine).
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 2, 3, 6, 8.
 
 ## 1. Architecture drivers and quality attributes
@@ -48,7 +48,7 @@ Why a modular monolith rather than microservices or one undivided package:
 | `notification` | In-app notifications, event handlers, `NotificationChannel` port and the logging email adapter | Implemented |
 | `reporting` | Workload, performance, aging, exposure, overview (read side) | Implemented |
 | `integration` | Transactional outbox, relay, payment gateway adapter | Implemented |
-| `bootstrap` | Composition root: demo-data `DataInitializer` and the root redirect controller (`bootstrap.api`). Nothing depends on it | Implemented |
+| `bootstrap` | Composition root: demo-data `DataInitializer`, `SampleClaimSeeder` and the root redirect controller (`bootstrap.api`). Nothing depends on it | Implemented |
 
 ### The claim module as built (prompt 4)
 
@@ -61,7 +61,7 @@ Why a modular monolith rather than microservices or one undivided package:
 | Timeline | `TimelineService` | The only creator of timeline entries; visibility is decided by the entry type |
 | Claim numbers | `ClaimNumberGenerator` | Row-locked counters, `MANDATORY` transaction, taken after all validation ([ADR 0007](adr/0007-claim-numbers-from-row-locked-counters.md)) |
 | Port | `PolicyLookup` and `PolicyView` (`claim.service`), implemented by `policy.infrastructure.PolicySnapshotLookup` | `claim` imports nothing from `policy`; `PolicyView` has its own status enum ([ADR 0008](adr/0008-ports-and-adapters-for-external-integrations.md)) |
-| Event write side | `ClaimEvents` (builds the eight events), `shared.event.DomainEventPublisher` (the port), `integration.service.OutboxDomainEventPublisher` (the adapter) | A service raises an event in the same transaction as the state change; the publisher requires that transaction (`MANDATORY`). The relay that delivers the rows is built in prompt 5 |
+| Event write side | `ClaimEvents` (builds the eight events), `shared.event.DomainEventPublisher` (the port), `integration.service.OutboxDomainEventPublisher` (the adapter) | A service raises an event in the same transaction as the state change; the publisher requires that transaction (`MANDATORY`). The relay that delivers the rows is described in the next section |
 
 The three architecture test classes in `src/test/java/com/apac/claims/architecture` hold the executable rules (prompt 4 wrote the first ones, prompt 5 completed them). `ModuleDependencyRulesTest` is table-driven: it holds the table of section 4 as data, computes for every module the modules its classes really depend on, and reports the class, the target and the module pair of every dependency the table does not allow; the other tests check cycles, the special rules of section 4, and that no module uses another module's `api` or `infrastructure` package. `LayerRulesTest` checks the layers of section 5 inside every feature module, and `CodingRulesTest` the coding conventions. The two named exceptions are recorded in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md).
 
@@ -228,7 +228,7 @@ Status: **Implemented** in prompt 3. These are the real classes.
 
 - **Authentication.** `POST /api/v1/auth/login?role=` takes a user ID, a password and a role. `role` is a required enum query parameter, which makes Swagger UI show a dropdown; the role stored on the account is authoritative and the parameter is only checked against it. Every failure (unknown user, wrong password, inactive account, wrong role) returns the same 401 with the message "Invalid user ID, password or role", and failures are logged at WARN with the user id and the requested role, never the password. A failure of the user lookup itself (for example the database is down) is a 500, not a 401. Passwords are stored as BCrypt hashes (8 to 64 characters at registration, at least one letter and one digit).
 - **Tokens.** Stateless JWT signed with HS256 using a shared secret of at least 32 bytes. Claims: `iss`, `sub` (user id), `iat`, `exp`, `role`, and `market` when present. The decoder is explicitly set to HS256 (its default is RS256) and rejects a tampered token, an expired token, a token signed with another key, a token with another algorithm in its header (including `none`) and a token from another issuer. See [ADR 0004](adr/0004-stateless-jwt-hs256-role-selected-at-login.md).
-- **Filter chain.** Public paths: `/`, `/api/v1/auth/**`, `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`, `/actuator/health`, `/error`. `/error` has to stay open, otherwise the body of a real error would turn into a 401. Every other actuator path needs a token.
+- **Filter chain.** Public paths: `/`, `/api/v1/auth/**`, `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`, `/actuator/health`, `/error`. `/error` has to stay open, otherwise the body of a real error would turn into a 401. Every other actuator path needs a token. The pattern `/v3/api-docs/**` does not match `/v3/api-docs.yaml`, so the YAML variant of the document needs a token (observed when the contract was exported in prompt 6); the JSON document at `/v3/api-docs`, which Swagger UI uses, is public.
 - **Authorization.** Two layers. Role checks are declarative on controllers (`@PreAuthorize` with the `Authz` constants, giving 403). Business-scope checks live in services: a claimant sees only own claims, an officer only claims of their market, a manager everything. An out-of-scope or unknown resource returns **404**, never 403, so existence is not revealed. Spring MVC validates a request body before the method-security check runs, so a caller without the role who sends an invalid body gets the 400 validation error instead of a 403 (see [04-api-design.md](04-api-design.md), section 2).
 - **Current user, on every request.** A token only proves who the caller was when it was issued. After the signature is verified, the converter asks `ActiveAccountChecker` whether the account still exists and is active; if not the request is a 401. This is one cheap query per request and is what makes a deactivation take effect immediately, on every protected endpoint. Endpoints that need the account itself call `CurrentUserService.requireCurrentUser()`, which loads it (with its market) for the services. The `role` claim is not re-read, so a role change applies at the next login.
 - **Failure responses.** `RestAuthenticationEntryPoint` (401) and `RestAccessDeniedHandler` (403) write the same RFC 7807 JSON shape as every other error. An `AccessDeniedException` raised by `@PreAuthorize` inside a controller is handled explicitly by `GlobalExceptionHandler`, because the catch-all there would otherwise make it a 500.
@@ -257,7 +257,7 @@ graph LR
         jvmLocal -->|"JDBC"| pgLocal
     end
 
-    subgraph compose["Docker Compose for reviewers (Planned)"]
+    subgraph compose["Docker Compose for reviewers, not executed on the development machine"]
         appC["app container: eclipse-temurin 21 JRE, port 8080 published"]
         pgC["postgres:17 container, no host port"]
         vol[("named volume")]
@@ -270,8 +270,9 @@ graph LR
 ```
 
 - **Local.** The developer runs the application from IntelliJ IDEA or with `mvnw`, against a PostgreSQL 17 instance whose database `claims_db` is created once by hand. Flyway creates the schema at startup; `DataInitializer` seeds demo data.
-- **Docker Compose.** A multi-stage `Dockerfile` builds the jar with Maven on JDK 21 and runs it on a JRE image as a non-root user. `docker-compose.yml` starts PostgreSQL 17 (no published host port, a named volume, a `pg_isready` health check) and the application, which waits for a healthy database. Docker is **not installed on the development machine**, so these files are reviewed by reading and are not executed there.
-- **Configuration.** Environment variables with safe local defaults: `SERVER_PORT`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRY_MINUTES`, `SEED_DEMO_DATA`, `SEED_SAMPLE_CLAIMS`.
+- **Docker Compose.** A multi-stage `Dockerfile` (build stage `maven:3.9-eclipse-temurin-21` with `mvn -B -DskipTests package`, runtime stage `eclipse-temurin:21-jre`, a non-root user, the jar copied to `/app/app.jar`) builds and runs the application. `docker-compose.yml` starts PostgreSQL 17 (no published host port, a named volume, a `pg_isready` health check) and the application, which waits for a healthy database and publishes `APP_PORT` (default 8080). `.dockerignore` keeps `target`, `docs`, `prompts`, `scripts` and local files out of the build context, and `.env.example` lists every variable the Compose file reads. Docker is **not installed on the development machine**, so these files were reviewed by reading and checked for consistency with `pom.xml` (the jar name equals `finalName`) and `application.yml` (the variable names match); they were never executed.
+- **Configuration.** Environment variables with safe local defaults: `SERVER_PORT`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `JWT_EXPIRY_MINUTES`, `SEED_DEMO_DATA`, `SEED_SAMPLE_CLAIMS`. Compose adds `APP_PORT`, the port published on the host.
+- **Verified run.** In prompt 6 the packaged jar was started on JDK 21 against a freshly created `claims_db`: Flyway applied `V1` to `V6`, the seeders created 13 users, 13 policies and four sample claims, and the smoke script passed 165 of 165 steps in two runs. The committed contract `src/main/resources/openapi/claims-api.yaml` was exported from that instance.
 - **Tests** use H2 in PostgreSQL mode and need neither PostgreSQL nor Docker.
 
 ## 10. How this would evolve

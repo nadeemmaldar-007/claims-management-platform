@@ -40,3 +40,7 @@ Build **one Spring Boot application** with base package `com.apac.claims`, divid
 - The compiler does not enforce the boundaries; only the tests do. If the architecture tests are weakened, the boundaries weaken.
 - All modules scale and fail together.
 - The shared database requires discipline: tables are owned by one module and there are no foreign keys across modules except to `app_users` and `markets`.
+
+## Implementation note (prompt 6)
+
+The decision held through the build. What changed along the way: the specification's dependency table gained one edge, `identity` to `market` (prompt 3: `app_users.market_id` is a foreign key to `markets`; `market` depends only on `shared` and `config`, so there is still no cycle), and the layer rules got three named exceptions ([ADR 0014](0014-api-records-and-kernel-api-in-the-layer-rules.md)). `ModuleDependencyRulesTest` holds the table as data and compares it with the dependencies of the real classes; with the other architecture tests there are 35 rules, all passing in the final verification. The boundaries are checked by tests only: the code is one Maven module, so the compiler does not enforce them.
