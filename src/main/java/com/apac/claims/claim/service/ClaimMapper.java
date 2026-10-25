@@ -1,10 +1,12 @@
 package com.apac.claims.claim.service;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 
 import com.apac.claims.claim.api.dto.AssessmentResponse;
 import com.apac.claims.claim.api.dto.ClaimDetailResponse;
 import com.apac.claims.claim.api.dto.ClaimSummaryResponse;
+import com.apac.claims.claim.api.dto.InformationRequestResponse;
 import com.apac.claims.claim.api.dto.QueueItemResponse;
 import com.apac.claims.claim.api.dto.TimelineEntryResponse;
 import com.apac.claims.claim.domain.Claim;
@@ -12,8 +14,10 @@ import com.apac.claims.claim.domain.ClaimAssessment;
 import com.apac.claims.claim.domain.ClaimAssessmentRepository;
 import com.apac.claims.claim.domain.ClaimTimelineEntry;
 import com.apac.claims.claim.domain.ClaimType;
+import com.apac.claims.claim.domain.InformationRequest;
 import com.apac.claims.claim.domain.InformationRequestRepository;
 import com.apac.claims.claim.domain.InformationRequestStatus;
+import com.apac.claims.claim.domain.TimelineEntryType;
 import com.apac.claims.identity.domain.AppUser;
 import com.apac.claims.identity.domain.Role;
 import com.apac.claims.shared.money.MoneyRules;
@@ -31,6 +35,9 @@ public class ClaimMapper {
 
     /** What a claimant sees in place of a staff member's user id. */
     public static final String CLAIMS_TEAM = "Claims team";
+
+    /** What a claimant reads on an ESCALATED timeline entry, whatever reason the officer gave. */
+    static final String ESCALATED_FOR_CLAIMANT = "Claim escalated to a manager for review.";
 
     private final ClaimAssessmentRepository assessments;
     private final InformationRequestRepository informationRequests;
@@ -74,14 +81,36 @@ public class ClaimMapper {
                 slaBreached);
     }
 
-    /** A claimant keeps their own user id on an entry and sees "Claims team" for every staff action. */
+    /**
+     * A claimant keeps their own user id on an entry and sees "Claims team" for every staff action. The reason an
+     * officer gave for an escalation is for staff: the claimant is told only that the claim went to a manager.
+     */
     public TimelineEntryResponse toTimelineEntry(ClaimTimelineEntry entry, AppUser viewer) {
         String actor = entry.getActorUserId();
-        if (!isStaff(viewer) && !actor.equals(viewer.getUserId())) {
-            actor = CLAIMS_TEAM;
+        String message = entry.getMessage();
+        if (!isStaff(viewer)) {
+            if (!actor.equals(viewer.getUserId())) {
+                actor = CLAIMS_TEAM;
+            }
+            if (entry.getEntryType() == TimelineEntryType.ESCALATED) {
+                message = ESCALATED_FOR_CLAIMANT;
+            }
         }
         return new TimelineEntryResponse(entry.getEntryType(), entry.getFromStatus(), entry.getToStatus(), actor,
-                entry.getMessage(), entry.getVisibility(), entry.getOccurredAt());
+                message, entry.getVisibility(), entry.getOccurredAt());
+    }
+
+    /**
+     * Staff see the user id of whoever asked; a claimant sees "Claims team". {@code overdue} is worked out here, from
+     * the status and the due time, and is never stored.
+     */
+    public InformationRequestResponse toInformationRequest(InformationRequest request, AppUser viewer, Instant now) {
+        boolean open = request.getStatus() == InformationRequestStatus.OPEN;
+        String requestedBy = isStaff(viewer) ? request.getRequestedBy().getUserId() : CLAIMS_TEAM;
+        String respondedBy = request.getRespondedBy() == null ? null : request.getRespondedBy().getUserId();
+        return new InformationRequestResponse(request.getId(), request.getQuestion(), request.getStatus(),
+                open && request.getDueAt().isBefore(now), request.getDueAt(), requestedBy,
+                request.getResponseText(), respondedBy, request.getRespondedAt(), request.getCreatedAt());
     }
 
     public AssessmentResponse toAssessment(ClaimAssessment assessment, String currencyCode) {
