@@ -26,7 +26,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * The generated OpenAPI document describes the claims and policies endpoints completely: every path and method, the
+ * The generated OpenAPI document describes the claims, policies and notifications endpoints completely: every path and method, the
  * idempotency header, the named examples (which must be valid requests), the status codes and the tags.
  */
 class ClaimsOpenApiTest extends AbstractApiTest {
@@ -56,6 +56,11 @@ class ClaimsOpenApiTest extends AbstractApiTest {
                 Arguments.of("/api/v1/claims/{claimNumber}/escalate", "post"),
                 Arguments.of("/api/v1/claims/{claimNumber}/approve", "post"),
                 Arguments.of("/api/v1/claims/{claimNumber}/reject", "post"),
+                Arguments.of("/api/v1/claims/{claimNumber}/settle", "post"),
+                Arguments.of("/api/v1/notifications", "get"),
+                Arguments.of("/api/v1/notifications/unread-count", "get"),
+                Arguments.of("/api/v1/notifications/{id}/read", "post"),
+                Arguments.of("/api/v1/notifications/read-all", "post"),
                 Arguments.of("/api/v1/claims/{claimNumber}/assessments", "post"),
                 Arguments.of("/api/v1/claims/{claimNumber}/assessments", "get"),
                 Arguments.of("/api/v1/claims/{claimNumber}/information-requests", "post"),
@@ -82,17 +87,23 @@ class ClaimsOpenApiTest extends AbstractApiTest {
 
     @ParameterizedTest(name = "{1} {0} is tagged")
     @MethodSource("operations")
-    void everyOperationBelongsToTheClaimsOrThePoliciesTag(String path, String method) throws Exception {
+    void everyOperationBelongsToTheTagOfItsArea(String path, String method) throws Exception {
         List<String> tags = JsonPath.read(apiDocs(), "$.paths['" + path + "']." + method + ".tags");
 
-        assertThat(tags).containsExactly(path.startsWith("/api/v1/policies") ? "Policies" : "Claims");
+        String expected = path.startsWith("/api/v1/policies") ? "Policies"
+                : path.startsWith("/api/v1/notifications") ? "Notifications" : "Claims";
+        assertThat(tags).containsExactly(expected);
     }
 
     @Test
-    void thePathsOfTheDocumentContainNoSettlementEndpointYet() throws Exception {
-        Map<String, Object> paths = JsonPath.read(apiDocs(), "$.paths");
+    void settlementIsDocumentedWithItsExampleAndItsGatewayFailureStatus() throws Exception {
+        Map<String, Object> examples = JsonPath.read(apiDocs(), "$.paths['/api/v1/claims/{claimNumber}/settle'].post"
+                + ".requestBody.content['application/json'].examples");
+        Map<String, Object> responses = JsonPath.read(apiDocs(),
+                "$.paths['/api/v1/claims/{claimNumber}/settle'].post.responses");
 
-        assertThat(paths.keySet()).noneMatch(path -> path.contains("settle"));
+        assertThat(examples.keySet()).containsExactly("Bank transfer");
+        assertThat(responses.keySet()).contains("200", "400", "401", "403", "404", "409", "502");
     }
 
     @Test
@@ -131,6 +142,7 @@ class ClaimsOpenApiTest extends AbstractApiTest {
                 "/api/v1/claims/{claimNumber}/assign", Set.of("200", "400", "403", "404", "409", "422"),
                 "/api/v1/claims/{claimNumber}/approve", Set.of("200", "400", "403", "404", "409", "422"),
                 "/api/v1/claims/{claimNumber}/reject", Set.of("200", "400", "403", "404", "409"),
+                "/api/v1/claims/{claimNumber}/settle", Set.of("200", "400", "403", "404", "409", "502"),
                 "/api/v1/claims/{claimNumber}/escalate", Set.of("200", "400", "403", "404", "409"),
                 "/api/v1/claims/{claimNumber}/assessments", Set.of("201", "400", "403", "404", "409"),
                 "/api/v1/claims/{claimNumber}/information-requests", Set.of("201", "400", "403", "404", "409"));

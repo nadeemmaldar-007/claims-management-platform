@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -230,7 +231,8 @@ class OutboxRelayTest {
             assertThat(current.getAttempts()).isEqualTo(attempt + 1);
             assertThat(current.getNextAttemptAt()).as("attempt %d", attempt + 1)
                     .isAfterOrEqualTo(before.plusSeconds(expectedSeconds[attempt]))
-                    .isBeforeOrEqualTo(after.plusSeconds(expectedSeconds[attempt]));
+                    // The database keeps microseconds and rounds, so the stored time may be up to a microsecond later.
+                    .isBeforeOrEqualTo(after.plusSeconds(expectedSeconds[attempt]).plus(1, ChronoUnit.MICROS));
         }
     }
 

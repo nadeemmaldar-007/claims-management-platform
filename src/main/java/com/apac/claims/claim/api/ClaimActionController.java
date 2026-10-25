@@ -5,8 +5,10 @@ import com.apac.claims.claim.api.dto.AssignClaimRequest;
 import com.apac.claims.claim.api.dto.ClaimDetailResponse;
 import com.apac.claims.claim.api.dto.EscalateRequest;
 import com.apac.claims.claim.api.dto.RejectRequest;
+import com.apac.claims.claim.api.dto.SettleClaimRequest;
 import com.apac.claims.claim.service.ClaimAssignmentService;
 import com.apac.claims.claim.service.ClaimDecisionService;
+import com.apac.claims.claim.service.ClaimSettlementService;
 import com.apac.claims.identity.service.CurrentUserService;
 import com.apac.claims.shared.security.Authz;
 
@@ -26,8 +28,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The actions that move a claim through its workflow: pick-up, assignment, escalation and the two decisions. Each
- * returns the updated claim. Settlement is not here; it arrives with the integration module.
+ * The actions that move a claim through its workflow: pick-up, assignment, escalation, the two decisions and
+ * settlement. Each returns the updated claim.
  */
 @RestController
 @RequestMapping("/api/v1/claims/{claimNumber}")
@@ -39,12 +41,14 @@ public class ClaimActionController {
 
     private final ClaimAssignmentService assignmentService;
     private final ClaimDecisionService decisionService;
+    private final ClaimSettlementService settlementService;
     private final CurrentUserService currentUserService;
 
     public ClaimActionController(ClaimAssignmentService assignmentService, ClaimDecisionService decisionService,
-                                 CurrentUserService currentUserService) {
+                                 ClaimSettlementService settlementService, CurrentUserService currentUserService) {
         this.assignmentService = assignmentService;
         this.decisionService = decisionService;
+        this.settlementService = settlementService;
         this.currentUserService = currentUserService;
     }
 
@@ -155,5 +159,33 @@ public class ClaimActionController {
     public ClaimDetailResponse reject(@Parameter(description = CLAIM_NUMBER, example = CLAIM_EXAMPLE)
                                       @PathVariable String claimNumber, @Valid @RequestBody RejectRequest request) {
         return decisionService.reject(claimNumber, request, currentUserService.requireCurrentUser());
+    }
+
+    @Operation(summary = "Settle an approved claim",
+            description = "The assigned officer or a manager pays an APPROVED claim through the payment gateway. The "
+                    + "amount paid is the approved amount. The gateway is called before anything is written: if it is "
+                    + "not available the answer is 502 and the claim stays APPROVED, with no timeline entry and no "
+                    + "event. Asking again after a failure succeeds, and a claim is never paid twice.",
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(content = @Content(
+                    mediaType = "application/json", examples = @ExampleObject(name = "Bank transfer", value = """
+                    {
+                      "paymentMethod": "BANK_TRANSFER",
+                      "remarks": "Paid to the account on file."
+                    }
+                    """))))
+    @ApiResponse(responseCode = "200", description = "The claim, now SETTLED, with its settlement block")
+    @ApiResponse(responseCode = "400", description = "paymentMethod is missing or not BANK_TRANSFER or CHEQUE")
+    @ApiResponse(responseCode = "401", description = "No valid token")
+    @ApiResponse(responseCode = "403", description = "A claimant, or an officer who is not the assigned officer")
+    @ApiResponse(responseCode = "404", description = "Unknown claim, or a claim outside the caller's market")
+    @ApiResponse(responseCode = "409", description = "CLAIM_INVALID_TRANSITION: only an APPROVED claim can be settled, "
+            + "and a claim is settled once")
+    @ApiResponse(responseCode = "502", description = "PAYMENT_GATEWAY_UNAVAILABLE: the claim stays APPROVED")
+    @PreAuthorize(Authz.STAFF)
+    @PostMapping("/settle")
+    public ClaimDetailResponse settle(@Parameter(description = CLAIM_NUMBER, example = CLAIM_EXAMPLE)
+                                      @PathVariable String claimNumber,
+                                      @Valid @RequestBody SettleClaimRequest request) {
+        return settlementService.settle(claimNumber, request, currentUserService.requireCurrentUser());
     }
 }
