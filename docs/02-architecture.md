@@ -1,6 +1,6 @@
 # 02. Architecture
 
-Status: **Planned** (design only; every module below is marked Planned until the prompt that builds it completes).
+Status: **partly Implemented.** `shared`, `config`, `security`, `identity`, `market` and `bootstrap` are built (prompts 2 and 3); the other modules are **Planned** until the prompt that builds them completes.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 2, 3, 6, 8.
 
 ## 1. Architecture drivers and quality attributes
@@ -38,17 +38,17 @@ Why a modular monolith rather than microservices or one undivided package:
 
 | Module | Responsibility | Status |
 |---|---|---|
-| `shared` | Kernel: `ApiException` base class (error code and HTTP status), error codes, `PageResponse`, `MoneyRules`, domain-event contracts (`DomainEvent`, `DomainEventPublisher`, `DomainEventHandler`), correlation id filter, and the single `GlobalExceptionHandler` in `shared.api` | Planned |
-| `config` | `@ConfigurationProperties` records and OpenAPI configuration | Planned |
-| `security` | JWT issuing and decoding, security filter chain, JSON 401 and 403 handlers. Depends on no feature module | Planned |
-| `identity` | Users, roles, login, registration, current-user resolution, adapter from users to Spring's `UserDetailsService` | Planned |
-| `market` | The six markets: country, currency, escalation threshold | Planned |
+| `shared` | Kernel: `ApiException` base class (error code and HTTP status), error codes, `PageResponse`, `MoneyRules`, domain-event contracts (`DomainEvent`, `DomainEventPublisher`, `DomainEventHandler`), correlation id filter, and the single `GlobalExceptionHandler` in `shared.api` | Implemented |
+| `config` | `@ConfigurationProperties` records and OpenAPI configuration | Implemented |
+| `security` | JWT issuing and decoding, security filter chain, JSON 401 and 403 handlers. Depends on no feature module | Implemented |
+| `identity` | Users, roles, login, registration, current-user resolution, adapter from users to Spring's `UserDetailsService` | Implemented |
+| `market` | The six markets: country, currency, escalation threshold | Implemented |
 | `policy` | Policy reference data (a local snapshot standing in for the policy administration system) and the adapter that implements claim's `PolicyLookup` port | Planned |
 | `claim` | Core: first notice of loss, workflow, queue and pick-up, assignment, assessment, information requests, decisions, settlement, timeline, claim numbers | Planned |
 | `notification` | In-app notifications, event handlers, `NotificationChannel` port and the logging email adapter | Planned |
 | `reporting` | Workload, performance, aging, exposure, overview (read side) | Planned |
 | `integration` | Transactional outbox, relay, payment gateway adapter | Planned |
-| `bootstrap` | Composition root: demo-data `DataInitializer` and the root redirect controller (`bootstrap.api`). Nothing depends on it | Planned |
+| `bootstrap` | Composition root: demo-data `DataInitializer` and the root redirect controller (`bootstrap.api`). Nothing depends on it | Implemented |
 
 ## 4. Allowed module dependencies
 
@@ -145,6 +145,8 @@ Cross-module rules that the table does not show:
 
 Rules that follow: entities never leave the service layer (services map them to DTOs inside the transaction); controllers are `@RestController` classes in `..api..` named `*Controller`; constructor injection only. See [ADR 0002](adr/0002-pragmatic-hexagonal-layering.md).
 
+One consequence found in prompt 3: the request and response records live in `api.dto`, but the **services** create the response records (so that entities are mapped inside the transaction). `service` therefore depends on `api.dto`, and only on that part of `api`. The layer rules in the architecture tests (prompts 4 to 6) must allow `..api.dto..` to be used from `service`, and keep controllers, which are the rest of `api`, out of reach.
+
 ## 6. Communication styles
 
 | Style | Used for | Mechanism |
@@ -158,22 +160,39 @@ Details are in [05-integration-design.md](05-integration-design.md).
 
 ## 7. Security architecture
 
-- **Authentication.** `POST /api/v1/auth/login?role=` takes a user ID, password and a role. Every failure (unknown user, wrong password, inactive account, wrong role) returns the same 401 message so that account existence is not revealed. Passwords are stored as BCrypt hashes (8 to 64 characters, at least one letter and one digit).
-- **Tokens.** Stateless JWT signed with HS256 using a shared secret of at least 32 bytes; the application fails at startup if the secret is shorter. Claims: `iss`, `sub` (user id), `iat`, `exp`, `role`, and `market` when present. The decoder is explicitly set to HS256. See [ADR 0004](adr/0004-stateless-jwt-hs256-role-selected-at-login.md).
-- **Filter chain.** `SecurityFilterChain` with `requestMatchers`, stateless sessions, CSRF disabled (token API), `@EnableMethodSecurity` and `@PreAuthorize` on controller methods. Public paths: `/`, `/api/v1/auth/**`, Swagger UI and API docs, `/actuator/health`, `/error`.
-- **Authorization.** Two layers. Role checks are declarative on controllers (`@PreAuthorize`, giving 403). Business-scope checks live in services: a claimant sees only own claims, an officer only claims of their market, a manager everything. An out-of-scope or unknown resource returns **404**, never 403, so existence is not revealed.
-- **Current user.** On each request the user is loaded from the database by `sub`; a missing or inactive user gets 401.
-- **Failure responses.** `RestAuthenticationEntryPoint` (401) and `RestAccessDeniedHandler` (403) write the same RFC 7807 JSON shape as every other error.
-- **Data handling.** Logs carry user ids and claim numbers only, never passwords, tokens or other personal data. No secrets are committed other than documented local-development defaults; real values come from environment variables.
+Status: **Implemented** in prompt 3. These are the real classes.
+
+| Class | Package | Role |
+|---|---|---|
+| `SecurityConfig` | `security` | The one `SecurityFilterChain`: stateless sessions, CSRF, HTTP basic, form login and logout all off; `requestMatchers` lists the public paths and requires authentication for the rest; the JWT resource server with the two JSON handlers; `@EnableMethodSecurity`. Also the `JwtAuthenticationConverter` (the single claim `role` becomes the authority `ROLE_<role>`) and the `AuthenticationManager` bean |
+| `JwtConfig` | `security` | Builds the encoder and the decoder from one secret. HS256 only; the decoder validates the issuer and the timestamps (Spring's default 60-second clock-skew tolerance, with time read from the `Clock` bean). A secret shorter than 32 bytes stops the application at startup |
+| `TokenIssuer`, `IssuedToken` | `security` | Issues a token from plain values (user id, role name, market code), so `security` does not depend on `identity`. The header names HS256 explicitly; `market` is only added when there is one |
+| `RestAuthenticationEntryPoint`, `RestAccessDeniedHandler` | `security` | Write the 401 (with `WWW-Authenticate: Bearer`) and the 403 as `application/problem+json`, with the correlation id |
+| `ActiveAccountChecker` | `security` | A port: "is the account of this token still active?" |
+| `UserAccountChecker` | `identity.infrastructure` | Implements that port with one existence query |
+| `AppUserDetailsService` | `identity.infrastructure` | Adapts accounts to Spring's `UserDetailsService`: lower-cased user id, disabled when inactive, one `ROLE_<role>` authority, the BCrypt hash from the entity |
+| `AuthService`, `UserService`, `CurrentUserService` | `identity.service` | Login, account creation (the only place accounts are created), and resolving the caller to an account |
+| `Authz` | `shared.security` | Constants for `@PreAuthorize`, so feature modules protect their controllers without importing `security` |
+| `CorrelationIdFilter`, `GlobalExceptionHandler`, `ProblemDetails` | `shared.api` | Correlation ids and the error contract |
+| `ClockConfig` | `config` | The `Clock` bean; all time is read through it |
+
+- **Authentication.** `POST /api/v1/auth/login?role=` takes a user ID, a password and a role. `role` is a required enum query parameter, which makes Swagger UI show a dropdown; the role stored on the account is authoritative and the parameter is only checked against it. Every failure (unknown user, wrong password, inactive account, wrong role) returns the same 401 with the message "Invalid user ID, password or role", and failures are logged at WARN with the user id and the requested role, never the password. A failure of the user lookup itself (for example the database is down) is a 500, not a 401. Passwords are stored as BCrypt hashes (8 to 64 characters at registration, at least one letter and one digit).
+- **Tokens.** Stateless JWT signed with HS256 using a shared secret of at least 32 bytes. Claims: `iss`, `sub` (user id), `iat`, `exp`, `role`, and `market` when present. The decoder is explicitly set to HS256 (its default is RS256) and rejects a tampered token, an expired token, a token signed with another key, a token with another algorithm in its header (including `none`) and a token from another issuer. See [ADR 0004](adr/0004-stateless-jwt-hs256-role-selected-at-login.md).
+- **Filter chain.** Public paths: `/`, `/api/v1/auth/**`, `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`, `/actuator/health`, `/error`. `/error` has to stay open, otherwise the body of a real error would turn into a 401. Every other actuator path needs a token.
+- **Authorization.** Two layers. Role checks are declarative on controllers (`@PreAuthorize` with the `Authz` constants, giving 403). Business-scope checks live in services: a claimant sees only own claims, an officer only claims of their market, a manager everything. An out-of-scope or unknown resource returns **404**, never 403, so existence is not revealed. Spring MVC validates a request body before the method-security check runs, so a caller without the role who sends an invalid body gets the 400 validation error instead of a 403 (see [04-api-design.md](04-api-design.md), section 2).
+- **Current user, on every request.** A token only proves who the caller was when it was issued. After the signature is verified, the converter asks `ActiveAccountChecker` whether the account still exists and is active; if not the request is a 401. This is one cheap query per request and is what makes a deactivation take effect immediately, on every protected endpoint. Endpoints that need the account itself call `CurrentUserService.requireCurrentUser()`, which loads it (with its market) for the services. The `role` claim is not re-read, so a role change applies at the next login.
+- **Failure responses.** `RestAuthenticationEntryPoint` (401) and `RestAccessDeniedHandler` (403) write the same RFC 7807 JSON shape as every other error. An `AccessDeniedException` raised by `@PreAuthorize` inside a controller is handled explicitly by `GlobalExceptionHandler`, because the catch-all there would otherwise make it a 500.
+- **Data handling.** Logs carry user ids and claim numbers only. A test and a run against the real database confirmed that no password, token, hash or request body reaches the log. No secrets are committed other than documented local-development defaults; real values come from environment variables.
+- **Not built (limitations).** No login throttling or account lockout, no refresh tokens, no token revocation list (the per-request account check is the only revocation), no `jti` claim.
 
 ## 8. Observability
 
-| Aspect | Design |
+| Aspect | Design (Implemented) |
 |---|---|
-| Correlation id | `X-Correlation-Id` is read from the request or generated, placed in the logging MDC, returned in the response header and included in every error body |
-| Logging | SLF4J only; the log pattern includes `%X{correlationId}`; no standard streams, no `java.util.logging` |
-| Health | `GET /actuator/health` is public; `info` is also exposed; nothing else |
-| Outbox visibility | Event status, attempts and last error are stored in `outbox_events`, so a failed delivery can be diagnosed with a query |
+| Correlation id | `CorrelationIdFilter` runs first (`@Order(HIGHEST_PRECEDENCE)`). `X-Correlation-Id` is echoed only when it matches `^[A-Za-z0-9._-]{1,64}$`; otherwise a UUID is generated. The id goes into the logging context, onto the response header before the chain runs (so a 401 from the security filters has it too), and into every error body; the context entry is removed in a `finally` block |
+| Logging | SLF4J only; the log pattern is `%5p [%X{correlationId:-}]`, so every request-time line shows the id and start-up lines show an empty one. No standard streams, no `java.util.logging`; 4xx responses are logged at DEBUG, anticipated 5xx at WARN without a stack trace, unexpected errors at ERROR with the stack trace |
+| Health | `GET /actuator/health` is public; `info` is also exposed but needs a token; nothing else |
+| Outbox visibility | Event status, attempts and last error are stored in `outbox_events`, so a failed delivery can be diagnosed with a query (Planned) |
 | Not included | Metrics registry, tracing backend and alerting. They would be added at deployment time |
 
 ## 9. Deployment view

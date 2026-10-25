@@ -1,6 +1,6 @@
 # Requirements Traceability Matrix
 
-Status: **Planned**. The "planned tests" column is filled in with real test names by the prompt that writes them; the status column changes to **Implemented** when the requirement is delivered and verified.
+Status: **R12 and the cross-cutting capabilities for login, errors, health and the API document are Implemented** (prompts 2 and 3); R1 to R11 and R13 are still **Planned**. The "planned tests" column is filled in with real test names by the prompt that writes them; the status column changes to **Implemented** when the requirement is delivered and verified.
 Date: 2026-10-25. Source: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 1, 5, 7, 9, 13.
 
 | Id | Requirement | Module | Planned endpoints | Planned tests (names to be filled in) | Status |
@@ -16,7 +16,7 @@ Date: 2026-10-25. Source: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 1, 5, 7, 9
 | R9 | Staff see team performance | `reporting` | `GET /reports/performance?from=&to=&marketCode=` | to be filled in (prompt 6): period default, approval rate, durations | Planned |
 | R10 | Managers see outstanding claims in real time | `reporting`, `claim` | `GET /reports/overview`; `GET /reports/aging`; `GET /claims?status=` | to be filled in (prompt 6): zero-filled status counts, aging buckets | Planned |
 | R11 | Managers see liability exposure | `reporting`, `market` | `GET /reports/exposure`; `GET /reports/overview` | to be filled in (prompt 6): exposure per market and type, base-currency conversion, rate source label | Planned |
-| R12 | Six markets with their own currencies | `market`, `claim`, `reporting` | `GET /markets`; `GET /markets/{code}`; claim submission (currency from the claimant's market) | Data layer (prompt 2): `FlywayMigrationRepositoryTest` (six markets, currencies, thresholds), `MarketRepositoryTest`, `MoneyRulesTest` (decimal places per currency), `DataInitializerTest.sumInsuredAndDeductibleFollowTheMarketThreshold`. To be filled in (prompts 4, 6): claim currency, base-currency conversion | Data layer implemented (API in prompt 3) |
+| R12 | Six markets with their own currencies | `market`, `claim`, `reporting` | `GET /markets`; `GET /markets/{code}`; claim submission (currency from the claimant's market) | Data layer (prompt 2): `FlywayMigrationRepositoryTest` (six markets, currencies, thresholds), `MarketRepositoryTest`, `MoneyRulesTest` (decimal places per currency), `DataInitializerTest.sumInsuredAndDeductibleFollowTheMarketThreshold`. API (prompt 3): `MarketApiTest` (six markets with currency and threshold, case-insensitive code, 404, 401, every role), `MarketServiceTest`. To be filled in (prompts 4, 6): claim currency, base-currency conversion | Implemented: markets data and API |
 | R13 | Structure, boundaries, data model and communication are documented | all, `docs/` | `GET /v3/api-docs`; committed `src/main/resources/openapi/claims-api.yaml` | to be filled in (prompts 4, 6, 7): ArchUnit rules, OpenAPI contract test; documents reviewed in prompt 7 | Planned |
 
 ## Cross-cutting capabilities
@@ -25,10 +25,11 @@ These support several requirements and have no number of their own.
 
 | Capability | Module | Planned endpoints | Planned tests | Status |
 |---|---|---|---|---|
-| Login, registration and staff account creation | `identity`, `security` | `POST /auth/login?role=`; `POST /auth/register`; `GET /users/me`; `POST /users`; `GET /users` | to be filled in (prompt 3) | Planned |
+| Login, registration and staff account creation | `identity`, `security` | `POST /auth/login?role=`; `POST /auth/register`; `GET /users/me`; `POST /users`; `GET /users` | `LoginApiTest` (three roles, every failure the same 401, case-insensitive user id), `RegistrationApiTest` (role in the body ignored, duplicates, weak password, password never echoed), `UserManagementApiTest` (officer and manager rules, paging, sort whitelist, size cap), `AuthorizationApiTest` (JSON 403, not 500), `TokenHandlingApiTest` (tampered, expired, foreign issuer, deleted and deactivated users), `JwtConfigTest`, `TokenIssuerTest`, `AuthServiceTest`, `UserServiceTest`, `CurrentUserServiceTest`, `AppUserDetailsServiceTest`, `PageRequestsTest` | Implemented |
 | Policy reference data maintenance | `policy` | `PUT /policies/{policyNumber}` | to be filled in (prompts 2, 4) | Planned |
-| Error contract and correlation id | `shared` | all endpoints | to be filled in (prompt 3) | Planned |
-| Health | `config` and Actuator | `GET /actuator/health` | to be filled in (prompt 3) | Planned |
+| Error contract and correlation id | `shared` | all endpoints | `ErrorContractApiTest` (every exception type, malformed bodies, 405, 415, 404, correlation id echo and replacement), `ProblemDetailsTest`, `CorrelationIdFilterTest` | Implemented |
+| Health | `config` and Actuator | `GET /actuator/health` | `OpenApiAndDocsApiTest.healthIsPublicAndReportsUp`, `OpenApiAndDocsApiTest.otherActuatorEndpointsAreNotPublic` | Implemented |
+| OpenAPI document, Swagger UI and root redirect | `config`, `bootstrap` | `GET /v3/api-docs`; `/swagger-ui/index.html`; `GET /` | `OpenApiAndDocsApiTest` (bearer scheme, login `role` enum, public login and register, unique tags, redirect). The committed contract file and its test are still Planned (prompt 7) | Implemented (document); contract file Planned |
 
 ## Where each requirement is designed
 

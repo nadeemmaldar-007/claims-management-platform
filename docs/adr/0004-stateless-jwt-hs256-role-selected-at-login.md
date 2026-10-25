@@ -39,3 +39,14 @@ The API is consumed by a separate frontend and by tools such as Swagger UI, so i
 - The shared secret must be protected and rotated carefully; rotating it invalidates all tokens.
 - Choosing a role at login is a convenience, not an extra security factor: the role stored on the account is authoritative, and one account has exactly one role.
 - One database read per request for the user lookup.
+- The `role` claim is not re-read from the database, so a role change for an active user applies at the next login (see the implementation notes).
+
+## Implementation notes (prompt 3)
+
+The decision was implemented as written. These details became concrete or changed:
+
+- **The per-request account check is in the security chain, not only in a service.** The "Good" consequence above promised that a deactivated account stops working at once. Implementing it only in `CurrentUserService` would have covered just the endpoints that load the user (for example `/users/me`) and left an old token valid on `/markets`. Instead `security` declares a small port, `ActiveAccountChecker`, which `identity` implements with one existence query, and the JWT converter calls it after the signature check. `security` still imports nothing from `identity`. A mutation check (disabling the call) made three tests fail: the token of a deactivated user was accepted with a 200 on `/markets`, and for a deleted user and for an unknown user the 401 came from the service layer without the `WWW-Authenticate` header instead of from the filter chain.
+- **Token validation.** The decoder checks the signature (HS256 only, so a token with HS512 or `none` in its header is rejected even with the right key), the issuer and the timestamps. Spring's default 60-second tolerance for clock drift was kept; time is read from the `Clock` bean, so tests control it. The issuer is plain text (`claims-management-platform`), not a URL, so code reads the `iss` claim as a string.
+- **Login.** Every credential failure gives the same exception and message and is logged at WARN with the user id (cleaned of any characters outside the allowed set) and the requested role, never the password. A failure of the user lookup itself, such as the database being down, is deliberately a 500 and not a 401, so an outage is not shown as "invalid credentials".
+- **Role changes are not live.** The `role` claim is trusted until the token expires, so a role change for an active user applies at the next login. Only deletion and deactivation take effect immediately. This is added to the "Bad" consequences.
+- **Not built:** login throttling and account lockout, refresh tokens, a token revocation list and a `jti` claim.

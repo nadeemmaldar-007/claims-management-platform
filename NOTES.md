@@ -1,6 +1,6 @@
 # Notes: Decisions and Assumptions
 
-Status: written at design stage (prompt 1) and updated in prompt 2 (data layer); reconciled with the finished code in the last prompt. Full detail is in [docs/](docs/): [PLAN.md](docs/PLAN.md), [architecture](docs/02-architecture.md) and the [decision records](docs/adr/).
+Status: written at design stage (prompt 1) and updated in prompts 2 (data layer) and 3 (security and identity); reconciled with the finished code in the last prompt. Full detail is in [docs/](docs/): [PLAN.md](docs/PLAN.md), [architecture](docs/02-architecture.md) and the [decision records](docs/adr/).
 
 ## Key assumptions
 
@@ -12,6 +12,10 @@ Status: written at design stage (prompt 1) and updated in prompt 2 (data layer);
 - **A team is a market.** An officer sees the claims, workload and performance of their own market.
 - **Escalation threshold is the officer's approval limit,** in local currency, roughly comparable across markets.
 - **Policies belong to the claimant.** A claim is valid only against the claimant's own, active, matching-type policy in their market.
+- **The role is chosen at login, as a query parameter.** `POST /auth/login?role=` makes Swagger UI show a real dropdown. The role stored on the account is authoritative; the parameter is only checked against it, so it adds a convenience and not a security factor ([ADR 0004](docs/adr/0004-stateless-jwt-hs256-role-selected-at-login.md)).
+- **One generic login failure.** Unknown user, wrong password, inactive account and wrong role all return the same 401 and the same message, so a caller cannot tell which accounts exist.
+- **The token's user is checked on every request.** A deleted or deactivated user is refused at once, on every protected endpoint; the role in the token is trusted until it expires.
+- **All time comes from a `Clock` bean,** so tests can control it.
 - **`identity` depends on `market`.** `app_users.market_id` is a foreign key to `markets`, so the dependency exists; the specification's dependency table was amended in prompt 3 to include it. It creates no cycle. See [docs/02-architecture.md](docs/02-architecture.md).
 
 ## The ten most important decisions
@@ -45,7 +49,9 @@ Also recorded: tests run on H2 in PostgreSQL mode so that Docker is not needed (
 
 - The outbox relay is a single instance; running several would need `FOR UPDATE SKIP LOCKED`.
 - Outbox rows and idempotency keys are never purged; `FAILED` events are re-queued by hand.
-- A token cannot be revoked before it expires (the per-request user check stops deactivated users).
+- A token cannot be revoked before it expires (the per-request user check stops deactivated users). There is no refresh token, no login throttling and no account lockout, and a role change applies only at the next login.
+- Spring validates a request body before the role check runs, so a caller without the role who sends an invalid body sees a 400 instead of a 403 (nothing sensitive is shown; see [docs/04-api-design.md](docs/04-api-design.md)).
+- The live smoke script creates two users in the database on every run (`smoke.off.*` and `smoke.clm.*`); there is no endpoint to delete them.
 - Tests use H2, not PostgreSQL, so PostgreSQL-only behaviour is checked by hand during final verification, not by automated tests.
 - `Dockerfile` and `docker-compose.yml` are not executed on the development machine, because Docker is not installed there.
 - Base-currency totals use illustrative rates and are not accounting figures.
