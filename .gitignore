@@ -1,0 +1,22 @@
+# Build output
+target/
+out/
+*.log
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# Local configuration and data
+.env
+data/
+HELP.md
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
