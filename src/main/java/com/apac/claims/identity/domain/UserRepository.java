@@ -18,6 +18,9 @@ public interface UserRepository extends JpaRepository<AppUser, Long>, JpaSpecifi
 
     boolean existsByUserId(String userId);
 
+    /** Used on every authenticated request, so it asks the database a yes-or-no question and loads nothing. */
+    boolean existsByUserIdAndActiveTrue(String userId);
+
     boolean existsByEmail(String email);
 
     List<AppUser> findByRoleAndMarketAndActiveTrue(Role role, Market market);

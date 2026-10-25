@@ -2,13 +2,17 @@ package com.apac.claims.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -25,6 +29,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter converter,
+                                                   ActiveAccountChecker accountChecker,
                                                    RestAuthenticationEntryPoint entryPoint,
                                                    RestAccessDeniedHandler deniedHandler) throws Exception {
         http
@@ -43,10 +48,25 @@ public class SecurityConfig {
                         .authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(deniedHandler))
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(converter))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(activeAccountsOnly(converter, accountChecker)))
                         .authenticationEntryPoint(entryPoint)
                         .accessDeniedHandler(deniedHandler));
         return http.build();
+    }
+
+    /**
+     * Wraps the converter so that a validly signed token is still refused when its user has been deleted or
+     * deactivated since it was issued. The token alone cannot be revoked, so this check is what makes a
+     * deactivation take effect immediately, on every protected endpoint.
+     */
+    static Converter<Jwt, AbstractAuthenticationToken> activeAccountsOnly(JwtAuthenticationConverter converter,
+                                                                          ActiveAccountChecker accountChecker) {
+        return jwt -> {
+            if (!accountChecker.isActive(jwt.getSubject())) {
+                throw new BadCredentialsException("The account of this token is missing or inactive");
+            }
+            return converter.convert(jwt);
+        };
     }
 
     /** Maps the single {@code role} claim to the authority {@code ROLE_<role>}. */
