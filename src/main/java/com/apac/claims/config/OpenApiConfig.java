@@ -52,6 +52,8 @@ public class OpenApiConfig {
                         new Tag().name("Authentication").description("Log in and register. Public."),
                         new Tag().name("Users").description("Own profile and user management."),
                         new Tag().name("Markets").description("The six markets, their currencies and thresholds."),
+                        new Tag().name("Policies").description(
+                                "Policy reference data: own policies for claimants, maintenance for managers."),
                         new Tag().name("Claims").description("First notice of loss, workflow and decisions."),
                         new Tag().name("Notifications").description("In-app notifications."),
                         new Tag().name("Reports").description("Workload, performance, aging and exposure.")))
