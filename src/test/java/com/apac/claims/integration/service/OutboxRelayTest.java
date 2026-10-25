@@ -19,6 +19,7 @@ import com.apac.claims.integration.domain.OutboxEventRepository;
 import com.apac.claims.integration.domain.OutboxStatus;
 import com.apac.claims.shared.event.DomainEvent;
 import com.apac.claims.shared.event.DomainEventHandler;
+import com.apac.claims.support.OutboxBacklog;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
@@ -86,9 +88,12 @@ class OutboxRelayTest {
     private ObjectMapper objectMapper;
     @Autowired
     private OutboxProperties properties;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @BeforeEach
-    void forgetEarlierCalls() {
+    void forgetEarlierCallsAndParkTheBacklog() {
+        OutboxBacklog.park(jdbc);
         handler.calls.clear();
         handler.order.clear();
         handler.failing.clear();

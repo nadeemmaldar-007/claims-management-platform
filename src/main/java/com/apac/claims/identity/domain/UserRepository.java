@@ -25,5 +25,11 @@ public interface UserRepository extends JpaRepository<AppUser, Long>, JpaSpecifi
 
     List<AppUser> findByRoleAndMarketAndActiveTrue(Role role, Market market);
 
+    /**
+     * Active accounts of a role in the market with the given code. Notifications know the market only as the code in
+     * an event payload and may not depend on the market module, so they ask by code.
+     */
+    List<AppUser> findByRoleAndMarketCodeAndActiveTrue(Role role, String marketCode);
+
     List<AppUser> findByRoleAndActiveTrue(Role role);
 }
