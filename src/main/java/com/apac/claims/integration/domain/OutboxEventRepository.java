@@ -12,11 +12,11 @@ import org.springframework.data.repository.query.Param;
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, String> {
 
     /**
-     * Events of the given status (PENDING for the relay) whose next attempt time has passed, oldest first.
+     * Events of the given status (PENDING for the relay) whose next attempt time has passed, oldest first (by time, then by id so the order is stable).
      * The {@link Pageable} only limits the batch size; ordering is fixed by the query.
      */
     @Query("select e from OutboxEvent e where e.status = :status and e.nextAttemptAt <= :now "
-            + "order by e.occurredAt asc")
+            + "order by e.occurredAt asc, e.id asc")
     List<OutboxEvent> findDueEvents(@Param("status") OutboxStatus status, @Param("now") Instant now,
                                     Pageable pageable);
 }

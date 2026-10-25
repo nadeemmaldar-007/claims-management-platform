@@ -19,6 +19,7 @@ import com.apac.claims.identity.domain.AppUser;
 import com.apac.claims.identity.domain.Role;
 import com.apac.claims.market.domain.Market;
 import com.apac.claims.shared.event.DomainEvent;
+import com.apac.claims.shared.event.EventTypes;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -188,9 +189,9 @@ class ClaimEventsTest {
 
     @Test
     void theEventTypeNamesAreTheDocumentedOnes() {
-        assertThat(List.of(ClaimEvents.CLAIM_SUBMITTED, ClaimEvents.CLAIM_ASSIGNED, ClaimEvents.INFORMATION_REQUESTED,
-                ClaimEvents.INFORMATION_PROVIDED, ClaimEvents.CLAIM_ESCALATED, ClaimEvents.CLAIM_APPROVED,
-                ClaimEvents.CLAIM_REJECTED, ClaimEvents.CLAIM_SETTLED))
+        assertThat(List.of(EventTypes.CLAIM_SUBMITTED, EventTypes.CLAIM_ASSIGNED, EventTypes.INFORMATION_REQUESTED,
+                EventTypes.INFORMATION_PROVIDED, EventTypes.CLAIM_ESCALATED, EventTypes.CLAIM_APPROVED,
+                EventTypes.CLAIM_REJECTED, EventTypes.CLAIM_SETTLED))
                 .containsExactly("ClaimSubmitted", "ClaimAssigned", "InformationRequested", "InformationProvided",
                         "ClaimEscalated", "ClaimApproved", "ClaimRejected", "ClaimSettled");
     }
