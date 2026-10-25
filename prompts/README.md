@@ -11,7 +11,9 @@ Every prompt used to build this project, kept verbatim and in the order it was u
 
 5. [`prompt-05-integration-and-reporting.md`](prompt-05-integration-and-reporting.md): the outbox relay with retry and backoff, event-driven notifications and their endpoints, the payment gateway port with a simulated adapter and settlement, the five reports, four sample claims seeded through the service layer, the remaining architecture rules and the JaCoCo coverage gate, and the notifications, settlement and reports steps of the smoke script.
 
-Prompt 6 (packaging and finish) is added to this list when it is used. (Until prompt 5 started, the plan had seven prompts; prompt 5 merged integration and reporting, see `docs/PROJECT_SPEC.md` section 16.) Any extra instruction that changes the work is saved as `prompts/prompt-0N-extra-<topic>.md` and listed here and in the AI journal.
+6. [`prompt-06-packaging-and-finish.md`](prompt-06-packaging-and-finish.md): Docker packaging (reviewed, not executed here), verification on a fresh database with the smoke script run twice, the exported OpenAPI contract and its test, the README, the interview guide, the final reconciliation of the design documents, and the last repository checks.
+
+(The plan had seven prompts until prompt 5 started; prompt 5 merged integration and reporting, see `docs/PROJECT_SPEC.md` section 16.) Any extra instruction that changes the work is saved as `prompts/prompt-0N-extra-<topic>.md` and listed here and in the AI journal.
 
 Extra instructions saved so far:
 
