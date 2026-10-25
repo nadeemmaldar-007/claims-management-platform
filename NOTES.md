@@ -1,6 +1,6 @@
 # Notes: Decisions and Assumptions
 
-Status: written at design stage (prompt 1); reconciled with the code in the last prompt. Full detail is in [docs/](docs/): [PLAN.md](docs/PLAN.md), [architecture](docs/02-architecture.md) and the [decision records](docs/adr/).
+Status: written at design stage (prompt 1) and updated in prompt 2 (data layer); reconciled with the finished code in the last prompt. Full detail is in [docs/](docs/): [PLAN.md](docs/PLAN.md), [architecture](docs/02-architecture.md) and the [decision records](docs/adr/).
 
 ## Key assumptions
 
@@ -12,6 +12,7 @@ Status: written at design stage (prompt 1); reconciled with the code in the last
 - **A team is a market.** An officer sees the claims, workload and performance of their own market.
 - **Escalation threshold is the officer's approval limit,** in local currency, roughly comparable across markets.
 - **Policies belong to the claimant.** A claim is valid only against the claimant's own, active, matching-type policy in their market.
+- **`identity` depends on `market`.** The specification's dependency table omits this edge, but `app_users.market_id` is a foreign key to `markets`, so the dependency exists. It creates no cycle. See [docs/02-architecture.md](docs/02-architecture.md).
 
 ## The ten most important decisions
 
@@ -48,4 +49,5 @@ Also recorded: tests run on H2 in PostgreSQL mode so that Docker is not needed (
 - Tests use H2, not PostgreSQL, so PostgreSQL-only behaviour is checked by hand during final verification, not by automated tests.
 - `Dockerfile` and `docker-compose.yml` are not executed on the development machine, because Docker is not installed there.
 - Base-currency totals use illustrative rates and are not accounting figures.
+- Demo accounts and policies are seeded by default (`app.seed.demo-data`) with documented passwords; switch the seeding off for anything but local use.
 - Where the specification is silent, the design records a working assumption ([docs/04-api-design.md](docs/04-api-design.md), "Details to confirm during implementation").

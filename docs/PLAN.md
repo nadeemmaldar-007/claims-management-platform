@@ -1,6 +1,6 @@
 # Delivery Plan
 
-Status: **Planned**. Prompt 1 (this prompt) is the only milestone in progress.
+Status: prompts 1 and 2 are complete (design, scaffold and data layer). Prompts 3 to 7 are **Planned**.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 16.
 
 ## 1. Delivery approach

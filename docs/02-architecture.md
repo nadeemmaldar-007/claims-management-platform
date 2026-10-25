@@ -59,7 +59,7 @@ Anything not listed is forbidden, and the graph has no cycles.
 | shared | none |
 | config | shared |
 | security | shared, config |
-| identity | shared, config, security |
+| identity | shared, config, security, market (added in prompt 2, see the note below the graph) |
 | market | shared, config |
 | claim | shared, config, identity, market |
 | policy | shared, config, identity, market, claim (implements claim's `PolicyLookup` port) |
@@ -88,6 +88,7 @@ graph TD
     identity --> shared
     identity --> config
     identity --> security
+    identity --> market
     market --> shared
     market --> config
     claim --> shared
@@ -124,6 +125,8 @@ graph TD
 ```
 
 The dotted edges show that `bootstrap` depends on every module. It is the composition root; nothing depends on it.
+
+**Clarification found in prompt 2.** The specification's table lists `identity` as depending on `shared`, `config` and `security` only. The data layer needs one more edge, `identity` to `market`: `app_users.market_id` is a foreign key to `markets`, so `AppUser` holds an association to `Market`, and both registration and login work with market codes. The edge creates no cycle, because `market` depends only on `shared` and `config`. `docs/PROJECT_SPEC.md` is left as extracted from the prompt; the table and graph in this document are the corrected version, and the architecture tests written in later prompts must allow this edge.
 
 Cross-module rules that the table does not show:
 

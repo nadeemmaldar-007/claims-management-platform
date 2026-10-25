@@ -6,7 +6,7 @@ Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 13
 ## 1. Principles
 
 - Every test runs on **H2 in PostgreSQL mode** (profile `test`) with no Docker and no running PostgreSQL ([ADR 0012](adr/0012-test-strategy-h2-postgresql-mode.md)). The same Flyway migrations run against H2.
-- No `@Transactional` on tests: the code under test controls its own transactions, and an enclosing test transaction would hide commit-time behaviour such as the outbox and optimistic locking.
+- No `@Transactional` on tests: the code under test controls its own transactions, and an enclosing test transaction would hide commit-time behaviour such as the outbox and optimistic locking. The one exception is the repository tests: `@DataJpaTest` rolls each test back, which keeps them independent and lets them read lazy associations. They use their own in-memory database (`claims_repo_test`, same H2 settings), so the reference data stays exactly as migration V6 left it even when other test classes commit rows to `claims_test`. Tests that must see committed behaviour use `@SpringBootTest` and an explicit `TransactionTemplate` where they need a transaction.
 - Each test creates unique data, so tests do not depend on order. Claim numbers are matched with regular expressions (`^CLM-\d{5,}$`, `^CLP-\d{5,}$`), never hard-coded.
 - Tests log in through the real login endpoint to obtain tokens, so the security chain is exercised.
 - A check is never weakened or deleted to make a build pass. If an architecture rule cannot be met cheaply, a narrow exception is documented in an ADR.

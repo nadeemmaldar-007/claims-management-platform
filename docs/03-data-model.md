@@ -1,6 +1,6 @@
 # 03. Data Model
 
-Status: **Planned** (the Flyway migrations are written in the data-layer prompt; this document is the design they implement).
+Status: **Implemented** in prompt 2. Migrations `V1` to `V6`, the entities and the repositories are built and were checked on H2 in PostgreSQL mode and on PostgreSQL 17.6 (section 7 lists what was verified and where the build differs from the first draft of this document).
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) section 4.
 
 ## 1. Conventions
@@ -118,7 +118,7 @@ erDiagram
 
 ## 3. Table dictionary
 
-### Migration `V1__markets_and_identity.sql`
+### Migration `V1__markets_and_identity.sql` (Implemented)
 
 **`markets`**: the six markets (reference data, owner `market`).
 
@@ -149,7 +149,7 @@ Indexes: unique on `code`.
 
 Constraints: `CHECK (role = 'MANAGER' OR market_id IS NOT NULL)`, so only managers may lack a market. Indexes: unique on `user_id`, unique on `email`.
 
-### Migration `V2__policies.sql`
+### Migration `V2__policies.sql` (Implemented)
 
 **`policies`**: local snapshot of policy data standing in for the policy administration system (owner `policy`).
 
@@ -168,7 +168,7 @@ Constraints: `CHECK (role = 'MANAGER' OR market_id IS NOT NULL)`, so only manage
 
 Indexes: unique on `policy_number`.
 
-### Migration `V3__claims.sql`
+### Migration `V3__claims.sql` (Implemented)
 
 **`claim_counters`**: one row per claim type, source of claim numbers (owner `claim`).
 
@@ -197,7 +197,7 @@ Indexes: `(claimant_id)`, `(market_id, status)`, `(assigned_officer_id, status)`
 
 **`claim_assessments`**: internal assessments; several are allowed and the latest counts.
 
-Columns: `id`, `claim_id` (FK), `assessed_by_id` (FK), `assessed_loss_amount`, `deductible_applied`, `recommended_payout`, `coverage_confirmed`, `recommendation` (`APPROVE`, `REJECT`, `ESCALATE`), `notes` (`VARCHAR(2000)`), `created_at`.
+Columns: `id`, `claim_id` (FK), `assessed_by_id` (FK), `assessed_loss_amount`, `deductible_applied`, `recommended_payout`, `coverage_confirmed`, `recommendation` (`APPROVE`, `REJECT`, `ESCALATE`), `notes` (`VARCHAR(2000)`, nullable: the API decides whether notes are required), `created_at`.
 
 **`information_requests`**: questions to the claimant.
 
@@ -205,13 +205,13 @@ Columns: `id`, `claim_id` (FK), `requested_by_id` (FK), `question` (`VARCHAR(100
 
 **`claim_timeline_entries`**: append-only audit trail.
 
-Columns: `id`, `claim_id` (FK), `entry_type` (`SUBMITTED`, `ASSIGNED`, `REASSIGNED`, `ASSESSMENT_RECORDED`, `INFORMATION_REQUESTED`, `INFORMATION_PROVIDED`, `INFORMATION_REQUEST_CANCELLED`, `ESCALATED`, `APPROVED`, `REJECTED`, `SETTLED`), `from_status`, `to_status`, `actor_user_id` (`VARCHAR`, a value rather than a foreign key), `message` (`VARCHAR(1000)`), `visibility` (`PUBLIC` or `INTERNAL`), `occurred_at`. `ASSESSMENT_RECORDED` and `REASSIGNED` are `INTERNAL`; all others are `PUBLIC`. Claimants only ever read `PUBLIC` entries.
+Columns: `id`, `claim_id` (FK), `entry_type` (`SUBMITTED`, `ASSIGNED`, `REASSIGNED`, `ASSESSMENT_RECORDED`, `INFORMATION_REQUESTED`, `INFORMATION_PROVIDED`, `INFORMATION_REQUEST_CANCELLED`, `ESCALATED`, `APPROVED`, `REJECTED`, `SETTLED`), `from_status`, `to_status` (both nullable, each with a CHECK against the seven claim statuses), `actor_user_id` (`VARCHAR(30)`, a value rather than a foreign key), `message` (`VARCHAR(1000)`), `visibility` (`PUBLIC` or `INTERNAL`), `occurred_at`. `ASSESSMENT_RECORDED` and `REASSIGNED` are `INTERNAL`; all others are `PUBLIC`. Claimants only ever read `PUBLIC` entries.
 
 **`idempotency_keys`**: remembers which claim a submission key created.
 
 Columns: `id`, `user_id` (FK), `idempotency_key` (`VARCHAR(64)`), `claim_number`, `created_at`. Constraint: unique `(user_id, idempotency_key)`.
 
-### Migration `V4__integration.sql`
+### Migration `V4__integration.sql` (Implemented)
 
 **`outbox_events`**: the transactional outbox (owner `integration`).
 
@@ -233,13 +233,13 @@ Index: `(status, next_attempt_at)`, which the relay uses to find due rows.
 
 Columns: `id`, `claim_number` (unique), `amount`, `currency_code`, `payment_method`, `reference` (unique), `status`, `created_at`.
 
-### Migration `V5__notifications.sql`
+### Migration `V5__notifications.sql` (Implemented)
 
 **`notifications`**: in-app notifications (owner `notification`).
 
 Columns: `id`, `recipient_id` (FK), `claim_number`, `notification_type`, `title`, `message` (`VARCHAR(1000)`), `read_flag` (`BOOLEAN`), `source_event_id` (`VARCHAR(36)`), `created_at`, `read_at`. Constraint: unique `(source_event_id, recipient_id)`, which makes event handling idempotent. Index: `(recipient_id, read_flag)`.
 
-### Migration `V6__reference_data.sql`
+### Migration `V6__reference_data.sql` (Implemented)
 
 Inserts the six markets and the two claim counters. Demo users, policies and claims are **not** in migrations; `DataInitializer` creates them so that they can be switched off by configuration.
 
@@ -270,7 +270,7 @@ Counters: `MOTOR` and `PROPERTY`, both with `next_value` 10001.
 | Module | Owns tables | Notes |
 |---|---|---|
 | `market` | `markets` | Reference data |
-| `identity` | `app_users` | |
+| `identity` | `app_users` | Foreign key to `markets` (`market_id`), which is why `identity` depends on `market` (see [02-architecture.md](02-architecture.md)) |
 | `policy` | `policies` | Foreign keys to `markets` and `app_users` only |
 | `claim` | `claim_counters`, `claims`, `claim_assessments`, `information_requests`, `claim_timeline_entries`, `idempotency_keys` | Refers to a policy by number; foreign keys to `markets` and `app_users` only |
 | `integration` | `outbox_events`, `payment_instructions` | Refers to claims by value |
@@ -288,4 +288,43 @@ Rule: **no foreign key crosses a module boundary except to identity (`app_users`
 - `idempotency_keys` rows are also kept. Purging them after a retention window would be a later task.
 - Personal data is limited to name, email and user id. Passwords are BCrypt hashes. Logs carry user ids and claim numbers only.
 - Timestamps are stored in UTC (`hibernate.jdbc.time_zone: UTC`).
-- The child tables read by `claim_id` (`claim_assessments`, `information_requests`, `claim_timeline_entries`) and `policies.holder_id` are queried by those columns. The specification lists no index for them; the data-layer prompt should decide whether to add them, since PostgreSQL does not index foreign keys automatically.
+- The child tables read by `claim_id` (`claim_assessments`, `information_requests`, `claim_timeline_entries`) and `policies.holder_id` are queried by those columns, and PostgreSQL does not index foreign keys automatically. Decision in prompt 2: **no extra index was added**, because the specification lists its indexes exactly and the data volume is small. Adding them later is a new migration if a query plan shows the need.
+
+## 7. As built (prompt 2)
+
+### What was verified
+
+- **H2 in PostgreSQL mode** (all tests): Flyway applied the six migrations, Hibernate `validate` accepted every entity, every CHECK constraint accepts every Java enum constant and rejects an invalid value, and each unique, foreign-key and check constraint named in the specification refuses a violating row. 187 test methods (335 invocations, counting each parameterised case) pass.
+- **PostgreSQL 17.6, database `claims_db`** (a real run of the packaged jar): Flyway applied 6 migrations to an empty schema ("now at version v6"); 13 tables exist (12 application tables plus `flyway_schema_history`); `markets` 6 rows, `app_users` 13, `policies` 13, `claim_counters` 2 with `next_value` 10001; six successful rows in `flyway_schema_history`; password hashes start with `$2a$10$`. A second start applied no migration and inserted no row.
+- Only the seven column types allowed for this project exist: `bigint`, `boolean`, `character varying`, `date`, `integer`, `numeric`, `timestamp with time zone`.
+
+Constraints as created on PostgreSQL:
+
+| Table | Primary key | Foreign keys | Unique | Check |
+|---|---|---|---|---|
+| `markets` | 1 | 0 | 1 | 0 |
+| `app_users` | 1 | 1 | 2 | 2 |
+| `policies` | 1 | 2 | 1 | 2 |
+| `claim_counters` | 1 | 0 | 0 | 1 |
+| `claims` | 1 | 4 | 1 | 8 |
+| `claim_assessments` | 1 | 2 | 0 | 1 |
+| `information_requests` | 1 | 3 | 0 | 1 |
+| `claim_timeline_entries` | 1 | 1 | 0 | 4 |
+| `idempotency_keys` | 1 | 1 | 1 | 0 |
+| `outbox_events` | 1 | 0 | 0 | 1 |
+| `payment_instructions` | 1 | 0 | 2 | 2 |
+| `notifications` | 1 | 1 | 1 | 1 |
+
+The six non-constraint indexes are `ix_claims_claimant_id`, `ix_claims_market_id_status`, `ix_claims_assigned_officer_id_status`, `ix_claims_policy_number_incident_date_claim_type`, `ix_outbox_events_status_next_attempt_at` and `ix_notifications_recipient_id_read_flag`.
+
+### Where the build differs from, or adds to, the first draft of this document
+
+- **Naming.** Every constraint and index has an explicit name: `pk_<table>`, `fk_<table>_<column>`, `uq_<table>_<column(s)>`, `ck_<table>_<column>`, `ix_<table>_<columns>`. The check that keeps a non-manager from lacking a market is `ck_app_users_market_required`.
+- **Column lengths** (the specification fixes types, not all lengths). Chosen: `markets.code` 2, `currency_code` 3, `country_name` 60; `app_users.user_id` 30, `password_hash` 100, `full_name` 100, `email` 150; `policy_number` 30, `insured_item` 200; `claim_number` 20, `incident_location` 200, `description` 1000, `property_address` 300, `vehicle_*` 50 (registration 20), `police_report_number` 50, `payment_reference` 40; `decision_reason` 40, `decision_remarks` 1000; `notes` 2000, `question` 1000, `response_text` 2000; `outbox_events.id` 36, `aggregate_type` 30, `aggregate_id` 50, `event_type` 50, `payload` 8000, `last_error` 1000; `payment_instructions.reference` 40; `notifications.title` 150, `message` 1000, `source_event_id` 36; `idempotency_key` 64. Enum columns: statuses 30, `entry_type` 40, `decision_reason` 40, others 20 (except `notifications.notification_type`, see below).
+- **`notifications.notification_type` is `VARCHAR(30)`, not 20,** because `INFORMATION_REQUESTED` has 21 characters.
+- **Nullability.** `claim_assessments.notes` is nullable (see above). `claim_timeline_entries.from_status` and `to_status` are nullable. All other columns not marked optional in the specification are `NOT NULL`, including `outbox_events.next_attempt_at` (initially equal to `occurred_at`).
+- **Defaults.** The only database default is `claims.version BIGINT NOT NULL DEFAULT 0`. Timestamps have no default; the entities set them in `@PrePersist` and `@PreUpdate`.
+- **Check constraints.** Every enum column has one (rule 4 in section 4), including `claim_timeline_entries.from_status` and `to_status`, `claims.decision_reason` (the rejection reason codes) and `payment_instructions.payment_method`, in addition to `ck_app_users_market_required`. `outbox_events.event_type` has none, because event types are an open list.
+- **`OutboxEvent` implements `Persistable<String>`** with a transient "new" flag, because its id is the application-assigned event UUID. A test proves that saving a second new event with the same id fails with a duplicate-key error, which shows an INSERT is issued and not a merge.
+- **Claim number counter.** The lock query `ClaimCounterRepository.findForUpdate` (`PESSIMISTIC_WRITE`) is tested for correctness and for the increment inside a transaction on H2. Contention between two real threads is not tested yet; it is first exercised when the claim number generator is built.
+- **Dependency.** Because `app_users.market_id` is a foreign key to `markets`, `AppUser` has an association to `Market`, so `identity` depends on `market`. See the clarification in [02-architecture.md](02-architecture.md).
