@@ -11,13 +11,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
+import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.Dependency;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchRule;
 
+import org.springframework.data.repository.Repository;
 
 /**
  * The module rules of the specification (section 3), driven by its table of allowed dependencies. For every module the
@@ -192,6 +196,49 @@ class ModuleDependencyRulesTest {
         assertThat(violations).as("uses of another module's api or infrastructure package").isEmpty();
     }
 
+
+    // ---- the rules of prompt 5: the notification and the reporting module ----------------------------------------------
+
+    @ArchTest
+    static void notificationDoesNotDependOnClaim(JavaClasses classes) {
+        noClasses().that().resideInAPackage("com.apac.claims.notification..")
+                .should().dependOnClassesThat().resideInAPackage("com.apac.claims.claim..")
+                .because("notifications are built from the event payload alone (the names of the events are in the kernel)")
+                .check(classes);
+    }
+
+    @ArchTest
+    static void reportingDependsOnNeitherNotificationNorIntegrationNorPolicy(JavaClasses classes) {
+        noClasses().that().resideInAPackage("com.apac.claims.reporting..")
+                .should().dependOnClassesThat().resideInAnyPackage("com.apac.claims.notification..",
+                        "com.apac.claims.integration..", "com.apac.claims.policy..")
+                .check(classes);
+    }
+
+    /** A call of a Spring Data repository that writes: a method whose name starts with save, delete or flush. */
+    private static final DescribedPredicate<JavaMethodCall> REPOSITORY_WRITE = DescribedPredicate.describe(
+            "a save, delete or flush of a Spring Data repository",
+            call -> call.getTargetOwner().isAssignableTo(Repository.class)
+                    && (call.getName().startsWith("save") || call.getName().startsWith("delete")
+                    || call.getName().startsWith("flush")));
+
+    @ArchTest
+    static void reportingNeverWrites(JavaClasses classes) {
+        noClasses().that().resideInAPackage("com.apac.claims.reporting..")
+                .should().callMethodWhere(REPOSITORY_WRITE)
+                .because("the reports are the read side: they compute, they never change anything")
+                .check(classes);
+    }
+
+    @ArchTest
+    static void theWriteMatcherDoesRecogniseTheWritesOfTheClaimServices(JavaClasses classes) {
+        // The control of the rule above: the same matcher finds the writes of a module that does write, so that
+        // a mistake in the matcher cannot make the rule pass on nothing.
+        ArchRule claimWrites = noClasses().that().resideInAPackage("com.apac.claims.claim.service..")
+                .should().callMethodWhere(REPOSITORY_WRITE);
+
+        assertThat(claimWrites.evaluate(classes).hasViolation()).isTrue();
+    }
     @ArchTest
     static void theModulesThatHaveCodeAreTheOnesTheRulesLookAt(JavaClasses classes) {
         // Guards the rules above against a mistake in a package name that would make them pass on an empty set.

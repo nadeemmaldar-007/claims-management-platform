@@ -105,7 +105,8 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
-            <!-- Coverage report only for now; the check rule is added in the testing prompt. -->
+            <!-- Coverage report and a gate. The same exclusions apply to both: the request and response records, the
+                 configuration, the main class and the package-info files carry no logic worth measuring. -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -123,6 +124,41 @@
                         <goals>
                             <goal>report</goal>
                         </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/api/dto/**</exclude>
+                                <exclude>**/config/**</exclude>
+                                <exclude>**/ClaimsManagementPlatformApplication*</exclude>
+                                <exclude>**/package-info*</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/api/dto/**</exclude>
+                                <exclude>**/config/**</exclude>
+                                <exclude>**/ClaimsManagementPlatformApplication*</exclude>
+                                <exclude>**/package-info*</exclude>
+                            </excludes>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.75</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
