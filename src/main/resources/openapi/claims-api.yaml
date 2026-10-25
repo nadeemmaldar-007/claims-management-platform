@@ -1,0 +1,3613 @@
+openapi: 3.1.0
+info:
+  title: Claims Management Platform API
+  description: |
+    Backend of the claims platform for motor and property claims in six markets (IN, SG, AU, JP, MY, TH).
+
+    **How to log in**
+    1. Open **Authentication, POST /api/v1/auth/login**.
+    2. Choose your role in the **role** dropdown (CLAIMANT, OFFICER or MANAGER).
+    3. Enter `userId` and `password` in the body and press **Execute**.
+    4. Copy the `accessToken` from the response, click **Authorize** at the top and paste the token only.
+
+    **Demo accounts (user ids)**: manager `manager.apac`; officers `officer.in`, `officer.sg`, `officer.au`, `officer.jp`, `officer.my`, `officer.th`; claimants `claimant.in`, `claimant.sg`, `claimant.au`, `claimant.jp`, `claimant.my`, `claimant.th`. The password of each account is documented in the README; the login example shows the one for `claimant.in`.
+
+    **Errors** are returned as `application/problem+json` with a `code`, a `timestamp` and the `correlationId` of the request, which is also sent in the `X-Correlation-Id` response header.
+  version: 1.0.0
+servers:
+- url: http://localhost:8080
+  description: Generated server url
+security:
+- bearerAuth: []
+tags:
+- name: Policies
+  description: "Policy reference data: own policies for claimants, maintenance for\
+    \ managers."
+- name: Authentication
+  description: Log in and register. Public.
+- name: Reports
+  description: "Workload, performance, aging and exposure."
+- name: Notifications
+  description: In-app notifications.
+- name: Users
+  description: Own profile and user management.
+- name: Markets
+  description: "The six markets, their currencies and thresholds."
+- name: Claims
+  description: "First notice of loss, workflow and decisions."
+paths:
+  /api/v1/policies/{policyNumber}:
+    get:
+      tags:
+      - Policies
+      summary: Get a policy
+      description: An officer reads a policy of their own market; a manager reads
+        any policy.
+      operationId: get
+      parameters:
+      - name: policyNumber
+        in: path
+        description: "Policy number, not case sensitive"
+        required: true
+        schema:
+          type: string
+        example: MOT-IN-0001
+      responses:
+        "200":
+          description: The policy
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "404":
+          description: "Unknown policy, or a policy of another market than the officer's"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+    put:
+      tags:
+      - Policies
+      summary: Create or update a policy
+      description: "A manager creates the policy (201 with a Location header) or,\
+        \ when the number already exists, updates it (200). The product type, the\
+        \ market and the holder of an existing policy cannot be changed. The holder\
+        \ must be an active claimant of the policy's market."
+      operationId: upsert
+      parameters:
+      - name: policyNumber
+        in: path
+        description: "Policy number: 6 to 20 letters, digits or dashes; stored upper\
+          \ case"
+        required: true
+        schema:
+          type: string
+        example: MOT-IN-0003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertPolicyRequest"
+        required: true
+      responses:
+        "200":
+          description: The policy was updated
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "201":
+          description: The policy was created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "400":
+          description: "Validation failed, for example an unknown holder, a holder\
+            \ of another market, a deductible above the sum insured, wrong decimal\
+            \ places, or a change of an immutable field"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+        "403":
+          description: Only a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
+  /api/v1/users:
+    get:
+      tags:
+      - Users
+      summary: List users
+      description: "A manager lists accounts, optionally filtered by role and market.\
+        \ Size defaults to 10 and is capped at 50. Sort by userId or createdAt, for\
+        \ example sort=createdAt,desc."
+      operationId: list
+      parameters:
+      - name: role
+        in: query
+        description: Only users with this role
+        required: false
+        schema:
+          type: string
+          enum:
+          - CLAIMANT
+          - OFFICER
+          - MANAGER
+      - name: marketCode
+        in: query
+        description: "Only users of this market, for example IN"
+        required: false
+        schema:
+          type: string
+      - name: page
+        in: query
+        description: "Page number, starting at 0"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: size
+        in: query
+        description: "Page size, default 10, maximum 50"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: sort
+        in: query
+        description: "Sort: userId or createdAt, optionally followed by ,asc or ,desc"
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: A page of users
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseUserResponse"
+        "400":
+          description: "Invalid filter, page, size or sort"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseUserResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseUserResponse"
+        "403":
+          description: Only a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseUserResponse"
+    post:
+      tags:
+      - Users
+      summary: Create a staff account
+      description: A manager creates an OFFICER (market required) or a MANAGER (no
+        market). Claimants register themselves.
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+        required: true
+      responses:
+        "201":
+          description: Account created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: "Validation failed, or the market rule for the role is broken"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "403":
+          description: Only a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "409":
+          description: The user ID or the email is already in use
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/notifications/{id}/read:
+    post:
+      tags:
+      - Notifications
+      summary: Mark one notification as read
+      description: "Someone else's notification, and an id that does not exist, are\
+        \ both reported as not found."
+      operationId: markRead
+      parameters:
+      - name: id
+        in: path
+        description: Id of the notification
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 12
+      responses:
+        "200":
+          description: "The notification, now read"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+        "404":
+          description: "Unknown id, or a notification of another user"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+  /api/v1/notifications/read-all:
+    post:
+      tags:
+      - Notifications
+      summary: Mark all my notifications as read
+      operationId: readAll
+      responses:
+        "200":
+          description: How many notifications changed
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReadAllResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReadAllResponse"
+  /api/v1/claims:
+    get:
+      tags:
+      - Claims
+      summary: List claims
+      description: "Lists the claims the caller may see: a claimant their own, an\
+        \ officer those of their market, a manager all. Filter by status, type, market,\
+        \ assignee or submission date (both dates inclusive). Size defaults to 10\
+        \ and is capped at 50. Sort by createdAt, claimedAmount, incidentDate or claimNumber,\
+        \ for example sort=claimedAmount,desc; the default is createdAt,desc."
+      operationId: list_1
+      parameters:
+      - name: status
+        in: query
+        description: Only claims in this status
+        required: false
+        schema:
+          type: string
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - PENDING_INFORMATION
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+      - name: claimType
+        in: query
+        description: Only claims of this type
+        required: false
+        schema:
+          type: string
+          enum:
+          - MOTOR
+          - PROPERTY
+      - name: marketCode
+        in: query
+        description: "Only claims of this market, for example IN"
+        required: false
+        schema:
+          type: string
+      - name: assignedTo
+        in: query
+        description: "me, or the user id of an officer"
+        required: false
+        schema:
+          type: string
+      - name: unassigned
+        in: query
+        description: "true for claims nobody has taken, false for claims that have\
+          \ an officer"
+        required: false
+        schema:
+          type: boolean
+      - name: submittedFrom
+        in: query
+        description: "Submitted on or after this day (UTC), yyyy-MM-dd"
+        required: false
+        schema:
+          type: string
+          format: date
+        example: 2026-10-01
+      - name: submittedTo
+        in: query
+        description: "Submitted on or before this day (UTC), yyyy-MM-dd"
+        required: false
+        schema:
+          type: string
+          format: date
+        example: 2026-10-31
+      - name: page
+        in: query
+        description: "Page number, starting at 0"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: size
+        in: query
+        description: "Page size, default 10, maximum 50"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: sort
+        in: query
+        description: "createdAt, claimedAmount, incidentDate or claimNumber, optionally\
+          \ with ,asc or ,desc"
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          description: A page of claims
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseClaimSummaryResponse"
+        "400":
+          description: "Invalid filter, date range, page, size or sort"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseClaimSummaryResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseClaimSummaryResponse"
+    post:
+      tags:
+      - Claims
+      summary: Submit a claim (first notice of loss)
+      description: "A claimant reports an incident under one of their own policies.\
+        \ Give the motor block for a MOTOR claim or the property block for a PROPERTY\
+        \ claim, never both. The claim takes the currency of your market. With an\
+        \ Idempotency-Key header (8 to 64 characters) a repeated request returns the\
+        \ original claim with status 200 and the header Idempotent-Replay: true instead\
+        \ of creating a second claim."
+      operationId: submit
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        description: Optional key that makes the submission safe to repeat; 8 to 64
+          characters
+        required: false
+        schema:
+          type: string
+        example: 7d9f3c52-claim-0001
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitClaimRequest"
+            examples:
+              Motor claim:
+                summary: A full MOTOR claim
+                description: Motor claim
+                value:
+                  claimType: MOTOR
+                  policyNumber: MOT-IN-0001
+                  claimedAmount: 45000.0
+                  incidentDate: 2026-10-15
+                  incidentLocation: "MG Road, Bengaluru"
+                  description: Rear-ended at a traffic signal; bumper and boot lid
+                    damaged.
+                  motor:
+                    vehicleRegistrationNumber: MH12AB1234
+                    vehicleMake: Hyundai
+                    vehicleModel: i20
+                    vehicleYear: 2021
+                    damageType: COLLISION
+                    policeReportNumber: FIR-2026-5521
+              Property claim:
+                summary: A full PROPERTY claim
+                description: Property claim
+                value:
+                  claimType: PROPERTY
+                  policyNumber: PRP-IN-0001
+                  claimedAmount: 250000.0
+                  incidentDate: 2026-10-15
+                  incidentLocation: "Powai, Mumbai"
+                  description: Heavy rain flooded the ground floor; flooring and furniture
+                    damaged.
+                  property:
+                    propertyAddress: "Flat 402, Lakeview Apartments, Powai, Mumbai\
+                      \ 400076"
+                    propertyType: RESIDENTIAL
+                    perilType: FLOOD
+        required: true
+      responses:
+        "201":
+          description: Claim created; the Location header points to it
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "200":
+          description: "Replay: the idempotency key was used before; the original\
+            \ claim is returned with the header Idempotent-Replay: true"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: "Validation failed, for example a wrong or missing motor or\
+            \ property block, a bad date or amount, or an idempotency key of the wrong\
+            \ length"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: Only a CLAIMANT may submit a claim
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "DUPLICATE_CLAIM: a claim for the same policy, incident date\
+            \ and type exists and is not rejected"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "422":
+          description: "Policy rule broken: POLICY_NOT_FOUND, POLICY_NOT_ACTIVE, POLICY_TYPE_MISMATCH,\
+            \ POLICY_MARKET_MISMATCH or AMOUNT_EXCEEDS_SUM_INSURED"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/settle:
+    post:
+      tags:
+      - Claims
+      summary: Settle an approved claim
+      description: "The assigned officer or a manager pays an APPROVED claim through\
+        \ the payment gateway. The amount paid is the approved amount. The gateway\
+        \ is called before anything is written: if it is not available the answer\
+        \ is 502 and the claim stays APPROVED, with no timeline entry and no event.\
+        \ Asking again after a failure succeeds, and a claim is never paid twice."
+      operationId: settle
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettleClaimRequest"
+            examples:
+              Bank transfer:
+                description: Bank transfer
+                value:
+                  paymentMethod: BANK_TRANSFER
+                  remarks: Paid to the account on file.
+        required: true
+      responses:
+        "200":
+          description: "The claim, now SETTLED, with its settlement block"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: paymentMethod is missing or not BANK_TRANSFER or CHEQUE
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: "A claimant, or an officer who is not the assigned officer"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "CLAIM_INVALID_TRANSITION: only an APPROVED claim can be settled,\
+            \ and a claim is settled once"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "502":
+          description: "PAYMENT_GATEWAY_UNAVAILABLE: the claim stays APPROVED"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/reject:
+    post:
+      tags:
+      - Claims
+      summary: Reject a claim
+      description: The reason code and the remarks are the explanation the claimant
+        is shown. A request for information that is still open is cancelled with the
+        claim. An escalated claim can be rejected by a manager only.
+      operationId: reject
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectRequest"
+            examples:
+              Not covered:
+                description: Not covered
+                value:
+                  reasonCode: NOT_COVERED
+                  remarks: Flood damage is not covered by this motor policy.
+        required: true
+      responses:
+        "200":
+          description: "The claim, now REJECTED"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: reasonCode or remarks is missing or invalid
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: "Not the assigned officer, or an officer on an escalated claim"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "CLAIM_INVALID_TRANSITION: the claim is in a status that cannot\
+            \ be rejected"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/pick-up:
+    post:
+      tags:
+      - Claims
+      summary: Pick up a claim
+      description: The caller takes a SUBMITTED claim from the queue and starts the
+        review. If another officer took it first the answer is 409 CLAIM_ALREADY_ASSIGNED.
+      operationId: pickUp
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      responses:
+        "200":
+          description: "The claim, now UNDER_REVIEW and assigned to the caller"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "CLAIM_ALREADY_ASSIGNED: someone else took the claim; CLAIM_INVALID_TRANSITION:\
+            \ the claim is in a status that cannot be picked up"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/information-requests:
+    get:
+      tags:
+      - Claims
+      summary: List the information requests of a claim
+      description: "Oldest first. A claimant sees the requests of their own claims,\
+        \ with staff shown as \"Claims team\"; staff see those of the claims in their\
+        \ scope. overdue is true for an OPEN request whose due time has passed."
+      operationId: list_2
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      responses:
+        "200":
+          description: The requests
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InformationRequestResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InformationRequestResponse"
+        "404":
+          description: "Unknown claim, or a claim the caller may not see"
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InformationRequestResponse"
+    post:
+      tags:
+      - Claims
+      summary: Ask the claimant for information
+      description: The assigned officer or a manager puts a question to the claimant.
+        The claim must be UNDER_REVIEW and becomes PENDING_INFORMATION. dueInDays
+        (1 to 30) defaults to the configured number of days.
+      operationId: create_1
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInformationRequest"
+        required: true
+      responses:
+        "201":
+          description: The new request; the Location header points to the list
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InformationRequestResponse"
+        "400":
+          description: "question is missing or not 10 to 1000 characters, or dueInDays\
+            \ is outside 1 to 30"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InformationRequestResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InformationRequestResponse"
+        "403":
+          description: "A claimant, or an officer who is not the assigned officer"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InformationRequestResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InformationRequestResponse"
+        "409":
+          description: "CLAIM_INVALID_TRANSITION: only an UNDER_REVIEW claim can be\
+            \ put on hold for information"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InformationRequestResponse"
+  /api/v1/claims/{claimNumber}/information-requests/{requestId}/respond:
+    post:
+      tags:
+      - Claims
+      summary: Answer an information request
+      description: "Only the claimant of the claim can answer, and only a request\
+        \ that is still OPEN. Once no request is left OPEN the claim goes back to\
+        \ UNDER_REVIEW. The answer is text only."
+      operationId: respond
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      - name: requestId
+        in: path
+        description: Id of the information request
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 5
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RespondToInformationRequest"
+        required: true
+      responses:
+        "200":
+          description: The claim
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: responseText is missing or not 10 to 2000 characters
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: Only a CLAIMANT may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, a claim of another claimant, or a request that\
+            \ belongs to another claim"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "INFORMATION_REQUEST_NOT_OPEN: already answered or cancelled"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/information-requests/{requestId}/cancel:
+    post:
+      tags:
+      - Claims
+      summary: Cancel an information request
+      description: The assigned officer or a manager withdraws a question that is
+        still OPEN. When no request is left OPEN the claim goes back to UNDER_REVIEW.
+      operationId: cancel
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      - name: requestId
+        in: path
+        description: Id of the information request
+        required: true
+        schema:
+          type: integer
+          format: int64
+        example: 5
+      responses:
+        "200":
+          description: The claim
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: "A claimant, or an officer who is not the assigned officer"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, a claim outside the caller's market, or a request\
+            \ that belongs to another claim"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "INFORMATION_REQUEST_NOT_OPEN: already answered or cancelled"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/escalate:
+    post:
+      tags:
+      - Claims
+      summary: Escalate a claim to a manager
+      description: "The assigned officer passes a claim that is UNDER_REVIEW to the\
+        \ managers, for example because the payout is above their approval limit.\
+        \ The remarks are shown to staff; the claimant is told only that the claim\
+        \ went to a manager."
+      operationId: escalate
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EscalateRequest"
+        required: true
+      responses:
+        "200":
+          description: "The claim, now ESCALATED"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: remarks is missing or not 10 to 1000 characters
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: Only the assigned OFFICER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "CLAIM_INVALID_TRANSITION: only an UNDER_REVIEW claim is escalated"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/assign:
+    post:
+      tags:
+      - Claims
+      summary: Assign or reassign a claim
+      description: "A manager gives the claim to an active officer of the claim's\
+        \ market. From SUBMITTED this starts the review; from UNDER_REVIEW, PENDING_INFORMATION\
+        \ or ESCALATED it is a reassignment that keeps the status and is recorded\
+        \ as an internal timeline entry."
+      operationId: assign
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignClaimRequest"
+        required: true
+      responses:
+        "200":
+          description: The claim with its new officer
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: officerUserId is missing
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: Only a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: Unknown claim
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "CLAIM_INVALID_TRANSITION: the claim can no longer be assigned"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "422":
+          description: "officerUserId is not an active officer of the claim's market,\
+            \ or is already the assigned officer"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/assessments:
+    get:
+      tags:
+      - Claims
+      summary: List the assessments of a claim
+      description: Newest first; the first one is the latest and the one that counts.
+      operationId: list_3
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      responses:
+        "200":
+          description: The assessments
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssessmentResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssessmentResponse"
+        "403":
+          description: A claimant may not read assessments
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssessmentResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssessmentResponse"
+    post:
+      tags:
+      - Claims
+      summary: Record an assessment
+      description: "The assigned officer or a manager records the facts of the assessment\
+        \ while the claim is UNDER_REVIEW or ESCALATED. The system computes the deductible\
+        \ (the claim's own) and the recommended payout: with coverage confirmed, the\
+        \ lower of the assessed loss and the sum insured minus the deductible, never\
+        \ below zero; without coverage, zero. Assessments are internal."
+      operationId: record
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordAssessmentRequest"
+            examples:
+              Coverage confirmed:
+                description: Coverage confirmed
+                value:
+                  assessedLossAmount: 44000.0
+                  coverageConfirmed: true
+                  recommendation: APPROVE
+                  notes: Photos match the repair estimate.
+        required: true
+      responses:
+        "201":
+          description: The assessment; the Location header points to the list
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AssessmentResponse"
+        "400":
+          description: "Invalid loss amount (or too many decimal places), missing\
+            \ field"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AssessmentResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AssessmentResponse"
+        "403":
+          description: "A claimant, or an officer who is not the assigned officer"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AssessmentResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AssessmentResponse"
+        "409":
+          description: "CLAIM_INVALID_TRANSITION: only an UNDER_REVIEW or ESCALATED\
+            \ claim can be assessed"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AssessmentResponse"
+  /api/v1/claims/{claimNumber}/approve:
+    post:
+      tags:
+      - Claims
+      summary: Approve a claim
+      description: "Needs a latest assessment that confirms coverage with a payout\
+        \ above zero. The approved amount defaults to that payout and may be lower,\
+        \ never higher. An officer may approve up to the market's escalation threshold\
+        \ only; a manager has no limit. An escalated claim can be approved by a manager\
+        \ only. The body may be left out."
+      operationId: approve
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveRequest"
+            examples:
+              Approve for less:
+                description: Approve for less
+                value:
+                  approvedAmount: 39000.0
+                  remarks: Approved as assessed.
+      responses:
+        "200":
+          description: "The claim, now APPROVED"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "400":
+          description: Invalid amount or too many decimal places for the currency
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "403":
+          description: "Not the assigned officer, or an officer on an escalated claim"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, or a claim outside the caller's market"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "409":
+          description: "ASSESSMENT_REQUIRED, CLAIM_INVALID_TRANSITION or CONCURRENT_MODIFICATION"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "422":
+          description: "APPROVAL_LIMIT_EXCEEDED, or approvedAmount above the recommended\
+            \ payout"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/auth/register:
+    post:
+      tags:
+      - Authentication
+      summary: Register as a claimant
+      description: "Creates a claimant account. There is no role in the request: everyone\
+        \ who registers is a claimant. No token is returned; log in afterwards."
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+        required: true
+      responses:
+        "201":
+          description: Account created
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: "Validation failed, for example a weak password or an unknown\
+            \ market code"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "409":
+          description: The user ID or the email is already in use
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+      security: []
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Authentication
+      summary: Log in
+      description: "1) choose your role in the dropdown, 2) enter userId and password\
+        \ in the body, 3) Execute, 4) copy accessToken, click Authorize, paste the\
+        \ token only."
+      operationId: login
+      parameters:
+      - name: role
+        in: query
+        description: The role you log in as. It must be the role of the account.
+        required: true
+        schema:
+          type: string
+          enum:
+          - CLAIMANT
+          - OFFICER
+          - MANAGER
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          description: Logged in; the response contains the access token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: "The role parameter is missing or not one of the three roles,\
+            \ or the body is invalid"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: "Invalid user ID, password or role (the same answer for every\
+            \ kind of failure)"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+      security: []
+  /api/v1/users/me:
+    get:
+      tags:
+      - Users
+      summary: Own profile
+      description: Returns the account of the logged-in user.
+      operationId: me
+      responses:
+        "200":
+          description: The profile
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: "No valid token, or the account no longer exists or is inactive"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+  /api/v1/reports/workload:
+    get:
+      tags:
+      - Reports
+      summary: Workload
+      description: "Per active officer: the open claims by status, the approved claims\
+        \ waiting for settlement, the age of the oldest open claim and the claims\
+        \ that are late; per market: the claims in the queue and how many of them\
+        \ are late. An officer sees their own team."
+      operationId: workload
+      parameters:
+      - name: marketCode
+        in: query
+        description: "A manager can narrow the report to one market, for example IN.\
+          \ An officer always sees their own market only: another market gives an\
+          \ empty report."
+        required: false
+        schema:
+          type: string
+        example: IN
+      responses:
+        "200":
+          description: One row per officer and one per market
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkloadResponse"
+        "400":
+          description: Unknown market code
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkloadResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkloadResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/WorkloadResponse"
+  /api/v1/reports/performance:
+    get:
+      tags:
+      - Reports
+      summary: Performance
+      description: "Per active officer for a period of whole days in UTC, both ends\
+        \ included: decisions, approval rate, settled claims, the average hours from\
+        \ submission to the first assignment and to the decision, and the total approved.\
+        \ The default period is the 30 days up to and including today. An officer\
+        \ sees their own team."
+      operationId: performance
+      parameters:
+      - name: from
+        in: query
+        description: "First day of the period (UTC), yyyy-MM-dd; default 29 days before\
+          \ to"
+        required: false
+        schema:
+          type: string
+          format: date
+        example: 2026-09-26
+      - name: to
+        in: query
+        description: "Last day of the period (UTC), yyyy-MM-dd; default today"
+        required: false
+        schema:
+          type: string
+          format: date
+        example: 2026-10-25
+      - name: marketCode
+        in: query
+        description: "A manager can narrow the report to one market, for example IN.\
+          \ An officer always sees their own market only: another market gives an\
+          \ empty report."
+        required: false
+        schema:
+          type: string
+        example: IN
+      responses:
+        "200":
+          description: One row per officer
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PerformanceResponse"
+        "400":
+          description: "from is after to, a date is invalid, or the market code is\
+            \ unknown"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PerformanceResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PerformanceResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PerformanceResponse"
+  /api/v1/reports/overview:
+    get:
+      tags:
+      - Reports
+      summary: Overview
+      description: "Claims by status (all seven statuses, zero where there is none)\
+        \ and by type, the outstanding exposure per market and in the base currency,\
+        \ the size of the queue, how many queued claims and how many open claims are\
+        \ late, and the open claims by age. The exchange rates are fixed and illustrative\
+        \ (rateSource STATIC_ILLUSTRATIVE)."
+      operationId: overview
+      parameters:
+      - name: marketCode
+        in: query
+        description: "A manager can narrow the report to one market, for example IN.\
+          \ An officer always sees their own market only: another market gives an\
+          \ empty report."
+        required: false
+        schema:
+          type: string
+        example: IN
+      responses:
+        "200":
+          description: The overview
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OverviewResponse"
+        "400":
+          description: Unknown market code
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OverviewResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OverviewResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/OverviewResponse"
+  /api/v1/reports/exposure:
+    get:
+      tags:
+      - Reports
+      summary: Liability exposure
+      description: "Per market and claim type: the open claimed amount, the approved\
+        \ amount waiting for payment, the settled total and the outstanding exposure\
+        \ (open plus approved), each in the local currency and in the base currency,\
+        \ and a total in the base currency only. The exchange rates are fixed and\
+        \ illustrative (rateSource STATIC_ILLUSTRATIVE). Managers only."
+      operationId: exposure
+      parameters:
+      - name: marketCode
+        in: query
+        description: "A manager can narrow the report to one market, for example IN.\
+          \ An officer always sees their own market only: another market gives an\
+          \ empty report."
+        required: false
+        schema:
+          type: string
+        example: IN
+      responses:
+        "200":
+          description: The exposure rows and the total
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExposureResponse"
+        "400":
+          description: Unknown market code
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExposureResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExposureResponse"
+        "403":
+          description: Only a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ExposureResponse"
+  /api/v1/reports/aging:
+    get:
+      tags:
+      - Reports
+      summary: Aging of the open claims
+      description: "The open claims by whole days since submission in four bands (0-2,\
+        \ 3-7, 8-14, 15+ days): the number and the exposure in the base currency,\
+        \ and in the local currency when the report covers one market."
+      operationId: aging
+      parameters:
+      - name: marketCode
+        in: query
+        description: "A manager can narrow the report to one market, for example IN.\
+          \ An officer always sees their own market only: another market gives an\
+          \ empty report."
+        required: false
+        schema:
+          type: string
+        example: IN
+      responses:
+        "200":
+          description: The four bands
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AgingResponse"
+        "400":
+          description: Unknown market code
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AgingResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AgingResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AgingResponse"
+  /api/v1/policies/mine:
+    get:
+      tags:
+      - Policies
+      summary: My policies
+      description: A claimant lists the policies they hold.
+      operationId: mine
+      responses:
+        "200":
+          description: "The caller's policies, ordered by policy number"
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PolicyResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PolicyResponse"
+        "403":
+          description: Only a CLAIMANT may do this
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PolicyResponse"
+  /api/v1/notifications:
+    get:
+      tags:
+      - Notifications
+      summary: List my notifications
+      description: "Your own notifications, newest first. With unreadOnly=true only\
+        \ the unread ones. Size defaults to 10 and is capped at 50."
+      operationId: list_4
+      parameters:
+      - name: unreadOnly
+        in: query
+        description: Only unread notifications
+        required: false
+        schema:
+          type: boolean
+      - name: page
+        in: query
+        description: "Page number, starting at 0"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: size
+        in: query
+        description: "Page size, default 10, maximum 50"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        "200":
+          description: A page of notifications
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseNotificationResponse"
+        "400":
+          description: Invalid page or size
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseNotificationResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseNotificationResponse"
+  /api/v1/notifications/unread-count:
+    get:
+      tags:
+      - Notifications
+      summary: Count my unread notifications
+      operationId: unreadCount
+      responses:
+        "200":
+          description: The number of unread notifications
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UnreadCountResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UnreadCountResponse"
+  /api/v1/markets:
+    get:
+      tags:
+      - Markets
+      summary: List markets
+      description: Returns the six markets with currency and threshold.
+      operationId: list_5
+      responses:
+        "200":
+          description: The markets
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketResponse"
+  /api/v1/markets/{code}:
+    get:
+      tags:
+      - Markets
+      summary: Get a market
+      description: Returns one market. The code is not case sensitive.
+      operationId: get_1
+      parameters:
+      - name: code
+        in: path
+        description: "Market code, for example IN or jp"
+        required: true
+        schema:
+          type: string
+        example: IN
+      responses:
+        "200":
+          description: The market
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MarketResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MarketResponse"
+        "404":
+          description: No market has this code
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/MarketResponse"
+  /api/v1/claims/{claimNumber}:
+    get:
+      tags:
+      - Claims
+      summary: Get a claim
+      description: One claim in full. A claim outside the caller's scope is reported
+        as not found. Staff also receive the latest assessment; a claimant never does.
+      operationId: get_2
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      responses:
+        "200":
+          description: The claim
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+        "404":
+          description: "Unknown claim, or a claim the caller may not see"
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ClaimDetailResponse"
+  /api/v1/claims/{claimNumber}/timeline:
+    get:
+      tags:
+      - Claims
+      summary: Claim timeline
+      description: "The history of the claim, oldest first. A claimant only receives\
+        \ the PUBLIC entries, and staff actions show the actor as \"Claims team\"\
+        ; staff receive every entry."
+      operationId: timeline
+      parameters:
+      - name: claimNumber
+        in: path
+        description: Claim number
+        required: true
+        schema:
+          type: string
+        example: CLM-10003
+      responses:
+        "200":
+          description: The timeline entries
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelineEntryResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelineEntryResponse"
+        "404":
+          description: "Unknown claim, or a claim the caller may not see"
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelineEntryResponse"
+  /api/v1/claims/queue:
+    get:
+      tags:
+      - Claims
+      summary: The officer queue
+      description: "Submitted claims that nobody has picked up yet, oldest first,\
+        \ with their age in hours and whether they breach the first-review target.\
+        \ An officer sees the queue of their own market, a manager the queue of all\
+        \ markets."
+      operationId: queue
+      parameters:
+      - name: page
+        in: query
+        description: "Page number, starting at 0"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      - name: size
+        in: query
+        description: "Page size, default 10, maximum 50"
+        required: false
+        schema:
+          type: integer
+          format: int32
+      responses:
+        "200":
+          description: A page of waiting claims
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseQueueItemResponse"
+        "401":
+          description: No valid token
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseQueueItemResponse"
+        "403":
+          description: Only an OFFICER or a MANAGER may do this
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageResponseQueueItemResponse"
+components:
+  schemas:
+    UpsertPolicyRequest:
+      type: object
+      description: A policy to create or update.
+      properties:
+        productType:
+          type: string
+          description: MOTOR or PROPERTY. Cannot be changed on an existing policy.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        marketCode:
+          type: string
+          description: Market code of the policy; the holder must belong to this market.
+            Cannot be changed on an existing policy.
+          example: IN
+          minLength: 1
+          pattern: "^[A-Za-z]{2}$"
+        holderUserId:
+          type: string
+          description: "User id of the holder: an active claimant of the market. Cannot\
+            \ be changed on an existing policy."
+          example: claimant.in
+          maxLength: 30
+          minLength: 0
+        insuredItem:
+          type: string
+          description: The insured vehicle registration number or property address.
+          example: MH14CD5678
+          maxLength: 200
+          minLength: 0
+        sumInsured:
+          type: number
+          description: Sum insured in the currency of the market. Must be above zero
+            and use the decimal places of the currency.
+          example: 1500000.0
+          maximum: 1000000000000
+          minimum: 0
+        deductible:
+          type: number
+          description: "Deductible in the currency of the market. Zero or more, and\
+            \ not above the sum insured."
+          example: 5000.0
+          minimum: 0
+        validFrom:
+          type: string
+          format: date
+          description: First day of cover.
+          example: 2026-01-01
+        validTo:
+          type: string
+          format: date
+          description: Last day of cover. Must be after validFrom.
+          example: 2027-12-31
+        status:
+          type: string
+          description: "ACTIVE, LAPSED or CANCELLED. Only an ACTIVE policy accepts\
+            \ a claim."
+          enum:
+          - ACTIVE
+          - LAPSED
+          - CANCELLED
+          example: ACTIVE
+      required:
+      - deductible
+      - holderUserId
+      - insuredItem
+      - marketCode
+      - productType
+      - status
+      - sumInsured
+      - validFrom
+      - validTo
+    PolicyResponse:
+      type: object
+      description: A policy.
+      properties:
+        policyNumber:
+          type: string
+          description: "Policy number, always upper case."
+          example: MOT-IN-0001
+        productType:
+          type: string
+          description: MOTOR or PROPERTY.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        marketCode:
+          type: string
+          description: Market code.
+          example: IN
+        holderUserId:
+          type: string
+          description: User id of the holder.
+          example: claimant.in
+        insuredItem:
+          type: string
+          description: Vehicle registration number or property address.
+          example: MH12AB1234
+        sumInsured:
+          type: number
+          description: Sum insured in the currency of the market.
+          example: 1500000.0
+        deductible:
+          type: number
+          description: Deductible in the currency of the market.
+          example: 5000.0
+        currencyCode:
+          type: string
+          description: "Currency of the amounts, from the market."
+          example: INR
+        validFrom:
+          type: string
+          format: date
+          description: First day of cover.
+          example: 2026-01-01
+        validTo:
+          type: string
+          format: date
+          description: Last day of cover.
+          example: 2027-12-31
+        status:
+          type: string
+          description: "ACTIVE, LAPSED or CANCELLED."
+          enum:
+          - ACTIVE
+          - LAPSED
+          - CANCELLED
+          example: ACTIVE
+        createdAt:
+          type: string
+          format: date-time
+          description: When the policy was created (UTC).
+          example: 2026-10-25T10:15:30Z
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the policy was last changed (UTC).
+          example: 2026-10-25T10:15:30Z
+    CreateUserRequest:
+      type: object
+      description: A staff account (officer or manager) created by a manager.
+      properties:
+        userId:
+          type: string
+          description: "User ID: 4 to 30 letters, digits, dots, dashes or underscores."
+          example: officer.new
+          minLength: 1
+          pattern: "^[A-Za-z0-9._-]{4,30}$"
+        password:
+          type: string
+          format: password
+          description: "Password: 8 to 64 characters with at least one letter and\
+            \ one digit."
+          example: Officer@123
+          minLength: 1
+          pattern: "^(?=.*[A-Za-z])(?=.*\\d).{8,64}$"
+        fullName:
+          type: string
+          description: Full name.
+          example: Officer New
+          maxLength: 100
+          minLength: 2
+        email:
+          type: string
+          description: Email address.
+          example: officer.new@claims-demo.example
+          maxLength: 150
+          minLength: 0
+        role:
+          type: string
+          description: Role of the new account.
+          enum:
+          - OFFICER
+          - MANAGER
+          example: OFFICER
+        marketCode:
+          type: string
+          description: "Market code: required for an OFFICER, not allowed for a MANAGER."
+          example: IN
+          pattern: "^[A-Za-z]{2}$"
+      required:
+      - email
+      - fullName
+      - password
+      - role
+      - userId
+    UserResponse:
+      type: object
+      description: A platform account.
+      properties:
+        userId:
+          type: string
+          description: "User ID, always lower case."
+          example: officer.in
+        fullName:
+          type: string
+          description: Display name.
+          example: Officer India
+        email:
+          type: string
+          description: "Email address, always lower case."
+          example: officer.in@claims-demo.example
+        role:
+          type: string
+          description: Role of the account.
+          enum:
+          - CLAIMANT
+          - OFFICER
+          - MANAGER
+          example: OFFICER
+        marketCode:
+          type: string
+          description: Market code; absent for managers.
+          example: IN
+        active:
+          type: boolean
+          description: Whether the account can log in.
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: When the account was created (UTC).
+          example: 2026-10-25T10:15:30Z
+    NotificationResponse:
+      type: object
+      description: A notification for the logged-in user.
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: "Id of the notification, used to mark it as read."
+          example: 12
+        claimNumber:
+          type: string
+          description: The claim the notification is about.
+          example: CLM-10003
+        type:
+          type: string
+          description: What happened.
+          enum:
+          - CLAIM_SUBMITTED
+          - NEW_CLAIM_IN_QUEUE
+          - CLAIM_ASSIGNED
+          - INFORMATION_REQUESTED
+          - INFORMATION_PROVIDED
+          - CLAIM_ESCALATED
+          - CLAIM_APPROVED
+          - CLAIM_REJECTED
+          - CLAIM_SETTLED
+          example: CLAIM_APPROVED
+        title:
+          type: string
+          description: Short title.
+          example: Claim approved
+        message:
+          type: string
+          description: The text of the notification.
+          example: Your claim CLM-10003 was approved for 39000.00 INR.
+        read:
+          type: boolean
+          description: True once the user has read it.
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          description: When it was created (UTC).
+          example: 2026-10-25T15:33:00Z
+        readAt:
+          type: string
+          format: date-time
+          description: When it was read (UTC); absent while unread.
+          example: 2026-10-25T16:00:00Z
+    ReadAllResponse:
+      type: object
+      description: How many notifications were marked as read.
+      properties:
+        updated:
+          type: integer
+          format: int32
+          description: Notifications that changed from unread to read.
+          example: 3
+    MotorDetails:
+      type: object
+      description: Details of the damaged vehicle.
+      properties:
+        vehicleRegistrationNumber:
+          type: string
+          description: Registration number of the vehicle.
+          example: MH12AB1234
+          maxLength: 20
+          minLength: 0
+        vehicleMake:
+          type: string
+          description: Make of the vehicle.
+          example: Hyundai
+          maxLength: 50
+          minLength: 0
+        vehicleModel:
+          type: string
+          description: Model of the vehicle.
+          example: i20
+          maxLength: 50
+          minLength: 0
+        vehicleYear:
+          type: integer
+          format: int32
+          description: "Year of manufacture, from 1980 to next year."
+          example: 2021
+        damageType:
+          type: string
+          description: "COLLISION, THEFT, FIRE, FLOOD, VANDALISM or OTHER."
+          enum:
+          - COLLISION
+          - THEFT
+          - FIRE
+          - FLOOD
+          - VANDALISM
+          - OTHER
+          example: COLLISION
+        policeReportNumber:
+          type: string
+          description: "Police report number, if there is one."
+          example: FIR-2026-5521
+          maxLength: 50
+          minLength: 0
+      required:
+      - damageType
+      - vehicleMake
+      - vehicleModel
+      - vehicleRegistrationNumber
+      - vehicleYear
+    PropertyDetails:
+      type: object
+      description: Details of the damaged property.
+      properties:
+        propertyAddress:
+          type: string
+          description: Address of the property.
+          example: "Flat 402, Lakeview Apartments, Powai, Mumbai 400076"
+          maxLength: 300
+          minLength: 0
+        propertyType:
+          type: string
+          description: "RESIDENTIAL, COMMERCIAL or INDUSTRIAL."
+          enum:
+          - RESIDENTIAL
+          - COMMERCIAL
+          - INDUSTRIAL
+          example: RESIDENTIAL
+        perilType:
+          type: string
+          description: "FIRE, FLOOD, STORM, THEFT, VANDALISM or OTHER."
+          enum:
+          - FIRE
+          - FLOOD
+          - STORM
+          - THEFT
+          - VANDALISM
+          - OTHER
+          example: FLOOD
+      required:
+      - perilType
+      - propertyAddress
+      - propertyType
+    SubmitClaimRequest:
+      type: object
+      description: "First notice of loss: what happened, which policy it falls under,\
+        \ and how much is claimed."
+      properties:
+        claimType:
+          type: string
+          description: MOTOR or PROPERTY. It must match the type of the policy.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        policyNumber:
+          type: string
+          description: "Number of one of your own policies: 6 to 20 letters, digits\
+            \ or dashes."
+          example: MOT-IN-0001
+          minLength: 1
+          pattern: "^[A-Za-z0-9-]{6,20}$"
+        claimedAmount:
+          type: number
+          description: "Amount claimed in the currency of your market. Above 0, at\
+            \ most 100000000, with the decimal places of the currency (JPY has none).\
+            \ It must not exceed the sum insured."
+          example: 45000.0
+          maximum: 100000000
+          minimum: 0
+        incidentDate:
+          type: string
+          format: date
+          description: Day of the incident. Not older than 5 years and not later than
+            tomorrow in UTC.
+          example: 2026-10-15
+        incidentLocation:
+          type: string
+          description: Where it happened.
+          example: "MG Road, Bengaluru"
+          maxLength: 200
+          minLength: 0
+        description:
+          type: string
+          description: "What happened, 10 to 1000 characters."
+          example: Rear-ended at a traffic signal; bumper and boot lid damaged.
+          maxLength: 1000
+          minLength: 10
+        motor:
+          $ref: "#/components/schemas/MotorDetails"
+          description: "Vehicle details. Required for a MOTOR claim, not allowed for\
+            \ a PROPERTY claim."
+        property:
+          $ref: "#/components/schemas/PropertyDetails"
+          description: "Property details. Required for a PROPERTY claim, not allowed\
+            \ for a MOTOR claim."
+      required:
+      - claimType
+      - claimedAmount
+      - description
+      - incidentDate
+      - incidentLocation
+      - policyNumber
+    AssessmentResponse:
+      type: object
+      description: An assessment of a claim (staff only).
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Id of the assessment.
+          example: 17
+        assessedBy:
+          type: string
+          description: User id of the assessing officer or manager.
+          example: officer.in
+        assessedLossAmount:
+          type: number
+          description: Loss as assessed.
+          example: 44000.0
+        deductibleApplied:
+          type: number
+          description: Deductible taken from the claim's policy snapshot.
+          example: 5000.0
+        recommendedPayout:
+          type: number
+          description: "Payout computed by the system: max(0, min(loss, sum insured)\
+            \ - deductible) when coverage is confirmed, else 0."
+          example: 39000.0
+        coverageConfirmed:
+          type: boolean
+          description: Whether the policy covers the loss.
+          example: true
+        recommendation:
+          type: string
+          description: "APPROVE, REJECT or ESCALATE."
+          enum:
+          - APPROVE
+          - REJECT
+          - ESCALATE
+          example: APPROVE
+        notes:
+          type: string
+          description: Internal notes.
+          example: Photos match the repair estimate.
+        createdAt:
+          type: string
+          format: date-time
+          description: When the assessment was recorded (UTC).
+          example: 2026-10-25T10:15:30Z
+    ClaimDetailResponse:
+      type: object
+      description: A claim with all its details.
+      properties:
+        claimNumber:
+          type: string
+          description: Claim number.
+          example: CLM-10003
+        claimType:
+          type: string
+          description: MOTOR or PROPERTY.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        status:
+          type: string
+          description: Workflow status.
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - PENDING_INFORMATION
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+          example: UNDER_REVIEW
+        marketCode:
+          type: string
+          description: Market code of the claim.
+          example: IN
+        currencyCode:
+          type: string
+          description: Currency of every amount of the claim.
+          example: INR
+        claimedAmount:
+          type: number
+          description: Amount claimed.
+          example: 45000.0
+        approvedAmount:
+          type: number
+          description: "Amount approved, once approved."
+          example: 40000.0
+        incidentDate:
+          type: string
+          format: date
+          description: Day of the incident.
+          example: 2026-10-15
+        claimantUserId:
+          type: string
+          description: User id of the claimant.
+          example: claimant.in
+        assignedOfficerUserId:
+          type: string
+          description: User id of the assigned officer. Staff only; absent until assigned.
+          example: officer.in
+        createdAt:
+          type: string
+          format: date-time
+          description: When the claim was submitted (UTC).
+          example: 2026-10-25T10:15:30Z
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the claim last changed (UTC).
+          example: 2026-10-25T10:15:30Z
+        policyNumber:
+          type: string
+          description: Policy number the claim was made under.
+          example: MOT-IN-0001
+        policySumInsured:
+          type: number
+          description: Sum insured of the policy when the claim was submitted.
+          example: 1500000.0
+        policyDeductible:
+          type: number
+          description: Deductible of the policy when the claim was submitted.
+          example: 5000.0
+        incidentLocation:
+          type: string
+          description: Where the incident happened.
+          example: "MG Road, Bengaluru"
+        description:
+          type: string
+          description: What happened.
+          example: Rear-ended at a traffic signal.
+        motor:
+          $ref: "#/components/schemas/MotorBlock"
+          description: Vehicle details of a motor claim.
+        property:
+          $ref: "#/components/schemas/PropertyBlock"
+          description: Property details of a property claim.
+        decision:
+          $ref: "#/components/schemas/DecisionBlock"
+          description: "The decision, once the claim is approved or rejected."
+        settlement:
+          $ref: "#/components/schemas/SettlementBlock"
+          description: "Payment details, once the claim is settled."
+        latestAssessment:
+          $ref: "#/components/schemas/AssessmentResponse"
+          description: The newest assessment. Staff only.
+        openInformationRequestCount:
+          type: integer
+          format: int64
+          description: Number of information requests that still wait for an answer.
+          example: 0
+    DecisionBlock:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - APPROVED
+          - REJECTED
+          example: APPROVED
+        reasonCode:
+          type: string
+          description: Reason code of a rejection.
+          enum:
+          - POLICY_INACTIVE
+          - NOT_COVERED
+          - FRAUD_SUSPECTED
+          - INSUFFICIENT_EVIDENCE
+          - DUPLICATE_CLAIM
+          - INFORMATION_NOT_PROVIDED
+          - OTHER
+          example: NOT_COVERED
+        remarks:
+          type: string
+          example: Approved as assessed.
+        decidedBy:
+          type: string
+          example: officer.in
+        decidedAt:
+          type: string
+          format: date-time
+          example: 2026-10-26T09:30:00Z
+        approvedAmount:
+          type: number
+          description: Approved amount of an approval.
+          example: 40000.0
+    MotorBlock:
+      type: object
+      properties:
+        vehicleRegistrationNumber:
+          type: string
+          example: MH12AB1234
+        vehicleMake:
+          type: string
+          example: Hyundai
+        vehicleModel:
+          type: string
+          example: i20
+        vehicleYear:
+          type: integer
+          format: int32
+          example: 2021
+        damageType:
+          type: string
+          enum:
+          - COLLISION
+          - THEFT
+          - FIRE
+          - FLOOD
+          - VANDALISM
+          - OTHER
+          example: COLLISION
+        policeReportNumber:
+          type: string
+          example: FIR-2026-5521
+    PropertyBlock:
+      type: object
+      properties:
+        propertyAddress:
+          type: string
+          example: "Flat 402, Lakeview Apartments, Powai, Mumbai 400076"
+        propertyType:
+          type: string
+          enum:
+          - RESIDENTIAL
+          - COMMERCIAL
+          - INDUSTRIAL
+          example: RESIDENTIAL
+        perilType:
+          type: string
+          enum:
+          - FIRE
+          - FLOOD
+          - STORM
+          - THEFT
+          - VANDALISM
+          - OTHER
+          example: FLOOD
+    SettlementBlock:
+      type: object
+      properties:
+        paymentMethod:
+          type: string
+          enum:
+          - BANK_TRANSFER
+          - CHEQUE
+          example: BANK_TRANSFER
+        paymentReference:
+          type: string
+          example: PAY-0123456789AB
+        settledAmount:
+          type: number
+          example: 40000.0
+        settledAt:
+          type: string
+          format: date-time
+          example: 2026-10-27T09:30:00Z
+    SettleClaimRequest:
+      type: object
+      description: How an approved claim is paid.
+      properties:
+        paymentMethod:
+          type: string
+          description: BANK_TRANSFER or CHEQUE.
+          enum:
+          - BANK_TRANSFER
+          - CHEQUE
+          example: BANK_TRANSFER
+        remarks:
+          type: string
+          description: Remarks shown to the claimant with the payment. At most 1000
+            characters.
+          example: Paid to the account on file.
+          maxLength: 1000
+          minLength: 0
+      required:
+      - paymentMethod
+    RejectRequest:
+      type: object
+      description: Why the claim is rejected; shown to the claimant.
+      properties:
+        reasonCode:
+          type: string
+          description: "POLICY_INACTIVE, NOT_COVERED, FRAUD_SUSPECTED, INSUFFICIENT_EVIDENCE,\
+            \ DUPLICATE_CLAIM, INFORMATION_NOT_PROVIDED or OTHER."
+          enum:
+          - POLICY_INACTIVE
+          - NOT_COVERED
+          - FRAUD_SUSPECTED
+          - INSUFFICIENT_EVIDENCE
+          - DUPLICATE_CLAIM
+          - INFORMATION_NOT_PROVIDED
+          - OTHER
+          example: NOT_COVERED
+        remarks:
+          type: string
+          description: "Explanation for the claimant, 10 to 1000 characters."
+          example: Flood damage is not covered by this motor policy.
+          maxLength: 1000
+          minLength: 10
+      required:
+      - reasonCode
+      - remarks
+    CreateInformationRequest:
+      type: object
+      description: A question for the claimant.
+      properties:
+        question:
+          type: string
+          description: "What staff need to know, 10 to 1000 characters."
+          example: Please send the repair estimate from the workshop.
+          maxLength: 1000
+          minLength: 10
+        dueInDays:
+          type: integer
+          format: int32
+          description: "Days the claimant has to answer, 1 to 30. Defaults to the\
+            \ configured number of days (7)."
+          example: 7
+          maximum: 30
+          minimum: 1
+      required:
+      - question
+    InformationRequestResponse:
+      type: object
+      description: "A question put to the claimant, and the answer once there is one."
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Id of the request.
+          example: 5
+        question:
+          type: string
+          description: The question.
+          example: Please send the repair estimate from the workshop.
+        status:
+          type: string
+          description: "OPEN, RESPONDED or CANCELLED."
+          enum:
+          - OPEN
+          - RESPONDED
+          - CANCELLED
+          example: OPEN
+        overdue:
+          type: boolean
+          description: True when the request is still open and its due time has passed.
+          example: false
+        dueAt:
+          type: string
+          format: date-time
+          description: When an answer is due (UTC).
+          example: 2026-11-01T10:15:30Z
+        requestedBy:
+          type: string
+          description: "Who asked: a user id, or \"Claims team\" for a claimant."
+          example: officer.in
+        responseText:
+          type: string
+          description: "The answer, once given."
+          example: The repair estimate is 42000 INR.
+        respondedBy:
+          type: string
+          description: User id of the claimant who answered.
+          example: claimant.in
+        respondedAt:
+          type: string
+          format: date-time
+          description: When the answer was given (UTC).
+          example: 2026-10-26T09:00:00Z
+        createdAt:
+          type: string
+          format: date-time
+          description: When the question was asked (UTC).
+          example: 2026-10-25T10:15:30Z
+    RespondToInformationRequest:
+      type: object
+      description: The claimant's answer.
+      properties:
+        responseText:
+          type: string
+          description: "The answer, 10 to 2000 characters. Text only."
+          example: "The repair estimate is 42000 INR from Sunrise Auto Works, Bengaluru."
+          maxLength: 2000
+          minLength: 10
+      required:
+      - responseText
+    EscalateRequest:
+      type: object
+      description: Why the claim is escalated.
+      properties:
+        remarks:
+          type: string
+          description: "Reason for escalating, 10 to 1000 characters."
+          example: Assessed payout is above my approval limit.
+          maxLength: 1000
+          minLength: 10
+      required:
+      - remarks
+    AssignClaimRequest:
+      type: object
+      description: The officer to assign the claim to.
+      properties:
+        officerUserId:
+          type: string
+          description: User id of an active officer of the claim's market.
+          example: officer.in
+          maxLength: 30
+          minLength: 0
+      required:
+      - officerUserId
+    RecordAssessmentRequest:
+      type: object
+      description: The facts of an assessment; the payout is computed by the system.
+      properties:
+        assessedLossAmount:
+          type: number
+          description: "The loss as assessed, in the currency of the claim, with its\
+            \ decimal places."
+          example: 44000.0
+          maximum: 100000000
+          minimum: 0
+        coverageConfirmed:
+          type: boolean
+          description: Whether the policy covers the loss. Without coverage the payout
+            is 0.
+          example: true
+        recommendation:
+          type: string
+          description: "APPROVE, REJECT or ESCALATE."
+          enum:
+          - APPROVE
+          - REJECT
+          - ESCALATE
+          example: APPROVE
+        notes:
+          type: string
+          description: "Internal notes, never shown to the claimant. At most 2000\
+            \ characters."
+          example: Photos match the repair estimate.
+          maxLength: 2000
+          minLength: 0
+      required:
+      - assessedLossAmount
+      - coverageConfirmed
+      - recommendation
+    ApproveRequest:
+      type: object
+      description: Optional details of an approval.
+      properties:
+        approvedAmount:
+          type: number
+          description: Amount to approve. Defaults to the recommended payout of the
+            latest assessment; must be above 0 and not above that payout.
+          example: 39000.0
+          minimum: 0
+        remarks:
+          type: string
+          description: Remarks shown to the claimant with the decision. At most 1000
+            characters.
+          example: Approved as assessed.
+          maxLength: 1000
+          minLength: 0
+    RegisterRequest:
+      type: object
+      description: Self-registration of a claimant.
+      properties:
+        userId:
+          type: string
+          description: "Chosen user ID: 4 to 30 letters, digits, dots, dashes or underscores."
+          example: new.claimant
+          minLength: 1
+          pattern: "^[A-Za-z0-9._-]{4,30}$"
+        password:
+          type: string
+          format: password
+          description: "Password: 8 to 64 characters with at least one letter and\
+            \ one digit."
+          example: Claimant@123
+          minLength: 1
+          pattern: "^(?=.*[A-Za-z])(?=.*\\d).{8,64}$"
+        fullName:
+          type: string
+          description: Full name.
+          example: New Claimant
+          maxLength: 100
+          minLength: 2
+        email:
+          type: string
+          description: Email address.
+          example: new.claimant@claims-demo.example
+          maxLength: 150
+          minLength: 0
+        marketCode:
+          type: string
+          description: "Code of the market the claimant lives in: IN, SG, AU, JP,\
+            \ MY or TH."
+          example: IN
+          minLength: 1
+          pattern: "^[A-Za-z]{2}$"
+      required:
+      - email
+      - fullName
+      - marketCode
+      - password
+      - userId
+    LoginRequest:
+      type: object
+      description: Credentials of the account that wants to log in.
+      properties:
+        userId:
+          type: string
+          description: User ID of the account. Not case sensitive.
+          example: claimant.in
+          maxLength: 30
+          minLength: 0
+        password:
+          type: string
+          format: password
+          description: Password of the account.
+          example: Claimant@123
+          maxLength: 64
+          minLength: 0
+      required:
+      - password
+      - userId
+    LoginResponse:
+      type: object
+      description: Result of a successful login.
+      properties:
+        accessToken:
+          type: string
+          description: The JWT access token. Paste only this value into the Authorize
+            dialog of Swagger UI.
+          example: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjbGFpbWFudC5pbiJ9.signature
+        tokenType:
+          type: string
+          description: Always Bearer.
+          example: Bearer
+        expiresInSeconds:
+          type: integer
+          format: int64
+          description: Seconds until the token expires.
+          example: 7200
+        user:
+          $ref: "#/components/schemas/UserSummary"
+    UserSummary:
+      type: object
+      description: The logged-in account.
+      properties:
+        userId:
+          type: string
+          description: "User ID, always lower case."
+          example: claimant.in
+        fullName:
+          type: string
+          description: Display name.
+          example: Claimant India
+        role:
+          type: string
+          description: Role of the account.
+          enum:
+          - CLAIMANT
+          - OFFICER
+          - MANAGER
+          example: CLAIMANT
+        marketCode:
+          type: string
+          description: "Market code; absent for managers, who work across markets."
+          example: IN
+    PageResponseUserResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+    MarketQueue:
+      type: object
+      description: The queue of one market.
+      properties:
+        marketCode:
+          type: string
+          description: Market code.
+          example: IN
+        unassignedInQueue:
+          type: integer
+          format: int64
+          description: Claims that are SUBMITTED and not assigned.
+          example: 2
+        queueSlaBreaches:
+          type: integer
+          format: int64
+          description: "Queued claims older than the first-review target (app.sla.first-review-hours,\
+            \ 48 hours by default), counted from submission."
+          example: 1
+    OfficerWorkload:
+      type: object
+      description: The workload of one officer.
+      properties:
+        userId:
+          type: string
+          description: User id of the officer.
+          example: officer.in
+        fullName:
+          type: string
+          description: Full name of the officer.
+          example: Officer India
+        marketCode:
+          type: string
+          description: Market of the officer.
+          example: IN
+        openAssigned:
+          type: integer
+          format: int64
+          description: "Open claims the officer has: UNDER_REVIEW plus PENDING_INFORMATION\
+            \ plus ESCALATED."
+          example: 3
+        underReview:
+          type: integer
+          format: int64
+          description: Claims UNDER_REVIEW.
+          example: 2
+        pendingInformation:
+          type: integer
+          format: int64
+          description: Claims PENDING_INFORMATION.
+          example: 1
+        escalated:
+          type: integer
+          format: int64
+          description: Claims ESCALATED that are still assigned to the officer.
+          example: 0
+        approvedAwaitingSettlement:
+          type: integer
+          format: int64
+          description: Claims the officer has that are APPROVED and wait for settlement.
+          example: 1
+        oldestOpenAgeHours:
+          type: integer
+          format: int64
+          description: "Age in whole hours, since submission, of the oldest open claim\
+            \ the officer has; null when the officer has none."
+          example: 72
+        slaBreaches:
+          type: integer
+          format: int64
+          description: "Open claims the officer has that are older than the decision\
+            \ target (app.sla.decision-hours, 240 hours by default)."
+          example: 0
+    WorkloadResponse:
+      type: object
+      description: Workload per officer and queue per market.
+      properties:
+        officers:
+          type: array
+          description: One row per active officer in scope.
+          items:
+            $ref: "#/components/schemas/OfficerWorkload"
+        markets:
+          type: array
+          description: One row per market in scope.
+          items:
+            $ref: "#/components/schemas/MarketQueue"
+    OfficerPerformance:
+      type: object
+      description: The performance of one officer in the period.
+      properties:
+        userId:
+          type: string
+          description: User id of the officer.
+          example: officer.in
+        fullName:
+          type: string
+          description: Full name of the officer.
+          example: Officer India
+        marketCode:
+          type: string
+          description: Market of the officer.
+          example: IN
+        decidedCount:
+          type: integer
+          format: int64
+          description: Claims the officer approved or rejected in the period (decision
+            time inside the period).
+          example: 5
+        approvedCount:
+          type: integer
+          format: int64
+          description: "Of those, the approved ones."
+          example: 3
+        rejectedCount:
+          type: integer
+          format: int64
+          description: "Of those, the rejected ones."
+          example: 2
+        approvalRate:
+          type: number
+          description: "approvedCount divided by decidedCount, between 0 and 1 with\
+            \ four decimals; null when there is no decision."
+          example: 0.6
+        settledCount:
+          type: integer
+          format: int64
+          description: Claims assigned to the officer that were settled in the period.
+          example: 1
+        avgHoursToFirstReview:
+          type: number
+          description: "Average hours from submission to assignment, over the claims\
+            \ assigned to the officer in the period (a reassignment counts from the\
+            \ new assignment); null when there is none."
+          example: 5.25
+        avgHoursToDecision:
+          type: number
+          description: "Average hours from submission to the decision, over the claims\
+            \ the officer decided in the period; null when there is none."
+          example: 30.5
+        totalApprovedAmount:
+          type: number
+          description: "Sum of the approved amounts of the claims the officer approved\
+            \ in the period, in the currency of the officer's market."
+          example: 117000.0
+        currency:
+          type: string
+          description: Currency of totalApprovedAmount.
+          example: INR
+    PerformanceResponse:
+      type: object
+      description: Performance per officer for a period.
+      properties:
+        from:
+          type: string
+          format: date
+          description: "First day of the period (UTC), inclusive."
+          example: 2026-09-26
+        to:
+          type: string
+          format: date
+          description: "Last day of the period (UTC), inclusive."
+          example: 2026-10-25
+        officers:
+          type: array
+          description: One row per active officer in scope.
+          items:
+            $ref: "#/components/schemas/OfficerPerformance"
+    AgingBucket:
+      type: object
+      description: Open claims of one age band.
+      properties:
+        label:
+          type: string
+          description: "The band: 0-2 days, 3-7 days, 8-14 days or 15+ days since\
+            \ submission."
+          example: 3-7 days
+        count:
+          type: integer
+          format: int64
+          description: "Number of open claims (SUBMITTED, UNDER_REVIEW, PENDING_INFORMATION,\
+            \ ESCALATED) in the band."
+          example: 4
+        outstandingExposureBase:
+          type: number
+          description: Claimed amount of those claims in the base currency; each market
+            is converted on its own and the results are added.
+          example: 1250.5
+        outstandingExposureLocal:
+          type: number
+          description: Claimed amount in the currency of the market. Only given when
+            the report covers one market.
+          example: 104208.33
+        currencyCode:
+          type: string
+          description: Currency of outstandingExposureLocal; only given with it.
+          example: INR
+    MarketOutstanding:
+      type: object
+      description: Outstanding exposure of one market.
+      properties:
+        marketCode:
+          type: string
+          description: Market code.
+          example: IN
+        currencyCode:
+          type: string
+          description: Currency of the local amount.
+          example: INR
+        outstandingExposure:
+          type: number
+          description: "Open claimed amounts plus approved amounts waiting for payment,\
+            \ local currency."
+          example: 84000.0
+        outstandingExposureBase:
+          type: number
+          description: The same in the base currency.
+          example: 1008.0
+    OverviewResponse:
+      type: object
+      description: The state of the claims of the scope at a glance.
+      properties:
+        countsByStatus:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          description: "Number of claims per status. All seven statuses are always\
+            \ present, with 0 where there is none."
+          example:
+            SUBMITTED: 2
+            UNDER_REVIEW: 1
+            PENDING_INFORMATION: 0
+            ESCALATED: 1
+            APPROVED: 1
+            REJECTED: 0
+            SETTLED: 0
+        countsByType:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          description: Number of claims per claim type; both types are always present.
+          example:
+            MOTOR: 3
+            PROPERTY: 2
+        outstandingExposureByMarket:
+          type: array
+          description: "Outstanding exposure (open claimed amounts plus approved amounts\
+            \ waiting for payment) per market, in the local currency and in the base\
+            \ currency."
+          items:
+            $ref: "#/components/schemas/MarketOutstanding"
+        outstandingExposureBase:
+          type: number
+          description: "Outstanding exposure of all markets in scope, base currency."
+          example: 2968.0
+        baseCurrency:
+          type: string
+          description: Currency of the base figures.
+          example: USD
+        rateSource:
+          type: string
+          description: Where the exchange rates come from. The rates are fixed and
+            illustrative.
+          example: STATIC_ILLUSTRATIVE
+        queueSize:
+          type: integer
+          format: int64
+          description: "Claims in the queue: SUBMITTED and not yet taken by an officer."
+          example: 2
+        queueSlaBreaches:
+          type: integer
+          format: int64
+          description: Claims in the queue that have waited longer than the first-review
+            target (48 hours).
+          example: 1
+        openClaimSlaBreaches:
+          type: integer
+          format: int64
+          description: Open claims that an officer has but that are older than the
+            decision target (240 hours since submission).
+          example: 0
+        aging:
+          type: array
+          description: "The open claims by age since submission, the four bands."
+          items:
+            $ref: "#/components/schemas/AgingBucket"
+    ExposureResponse:
+      type: object
+      description: Liability exposure per market and claim type.
+      properties:
+        baseCurrency:
+          type: string
+          description: Currency of the base figures and of the total.
+          example: USD
+        rateSource:
+          type: string
+          description: "Where the exchange rates come from. The rates are fixed and\
+            \ illustrative, not real exchange rates."
+          example: STATIC_ILLUSTRATIVE
+        rows:
+          type: array
+          description: "One row per market in scope and claim type, also when there\
+            \ is nothing to show."
+          items:
+            $ref: "#/components/schemas/ExposureRow"
+        total:
+          $ref: "#/components/schemas/ExposureTotal"
+          description: "The total of all rows, base currency only."
+    ExposureRow:
+      type: object
+      description: Exposure of one market and claim type.
+      properties:
+        marketCode:
+          type: string
+          description: Market code.
+          example: IN
+        claimType:
+          type: string
+          description: MOTOR or PROPERTY.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        currencyCode:
+          type: string
+          description: Currency of the local amounts.
+          example: INR
+        openClaimedAmount:
+          type: number
+          description: "Sum of the claimed amounts of the open claims (SUBMITTED,\
+            \ UNDER_REVIEW, PENDING_INFORMATION, ESCALATED), local currency."
+          example: 45000.0
+        approvedAwaitingPayment:
+          type: number
+          description: "Sum of the approved amounts of the APPROVED claims, which\
+            \ wait for payment, local currency."
+          example: 39000.0
+        settledTotal:
+          type: number
+          description: "Sum of the settled amounts of the SETTLED claims, local currency."
+          example: 0.0
+        outstandingExposure:
+          type: number
+          description: "openClaimedAmount plus approvedAwaitingPayment, local currency."
+          example: 84000.0
+        openClaimedAmountBase:
+          type: number
+          description: openClaimedAmount in the base currency.
+          example: 540.0
+        approvedAwaitingPaymentBase:
+          type: number
+          description: approvedAwaitingPayment in the base currency.
+          example: 468.0
+        settledTotalBase:
+          type: number
+          description: settledTotal in the base currency.
+          example: 0.0
+        outstandingExposureBase:
+          type: number
+          description: outstandingExposure in the base currency.
+          example: 1008.0
+    ExposureTotal:
+      type: object
+      description: Total exposure in the base currency.
+      properties:
+        openClaimedAmount:
+          type: number
+          description: "Open claimed amounts, base currency."
+          example: 2500.0
+        approvedAwaitingPayment:
+          type: number
+          description: "Approved amounts waiting for payment, base currency."
+          example: 468.0
+        settledTotal:
+          type: number
+          description: "Settled amounts, base currency."
+          example: 0.0
+        outstandingExposure:
+          type: number
+          description: "Sum of the outstandingExposure of the rows, base currency."
+          example: 2968.0
+    AgingResponse:
+      type: object
+      description: Open claims by age since submission.
+      properties:
+        baseCurrency:
+          type: string
+          description: Currency of the base figures.
+          example: USD
+        rateSource:
+          type: string
+          description: Where the exchange rates come from. The rates are fixed and
+            illustrative.
+          example: STATIC_ILLUSTRATIVE
+        buckets:
+          type: array
+          description: "The four bands, always all four, oldest last."
+          items:
+            $ref: "#/components/schemas/AgingBucket"
+    PageResponseNotificationResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+    UnreadCountResponse:
+      type: object
+      description: The number of unread notifications.
+      properties:
+        unreadCount:
+          type: integer
+          format: int64
+          description: Unread notifications of the logged-in user.
+          example: 3
+    MarketResponse:
+      type: object
+      description: One of the six markets.
+      properties:
+        code:
+          type: string
+          description: Two-letter market code.
+          example: IN
+        countryName:
+          type: string
+          description: Country name.
+          example: India
+        currencyCode:
+          type: string
+          description: ISO 4217 currency code of the market; every claim of the market
+            uses it.
+          example: INR
+        escalationThreshold:
+          type: number
+          description: "The largest amount an officer may approve without escalating,\
+            \ in the market's currency."
+          example: 500000.0
+        active:
+          type: boolean
+          description: Whether the market accepts new registrations and claims.
+          example: true
+    ClaimSummaryResponse:
+      type: object
+      description: A claim in a list.
+      properties:
+        claimNumber:
+          type: string
+          description: "Claim number: CLM- for motor, CLP- for property."
+          example: CLM-10003
+        claimType:
+          type: string
+          description: MOTOR or PROPERTY.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        status:
+          type: string
+          description: Workflow status.
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - PENDING_INFORMATION
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+          example: SUBMITTED
+        marketCode:
+          type: string
+          description: Market code of the claim.
+          example: IN
+        currencyCode:
+          type: string
+          description: Currency of every amount of the claim.
+          example: INR
+        claimedAmount:
+          type: number
+          description: Amount claimed.
+          example: 45000.0
+        approvedAmount:
+          type: number
+          description: "Amount approved, once the claim is approved."
+          example: 40000.0
+        incidentDate:
+          type: string
+          format: date
+          description: Day of the incident.
+          example: 2026-10-15
+        claimantUserId:
+          type: string
+          description: User id of the claimant.
+          example: claimant.in
+        assignedOfficerUserId:
+          type: string
+          description: User id of the assigned officer. Staff only; absent until the
+            claim is assigned.
+          example: officer.in
+        createdAt:
+          type: string
+          format: date-time
+          description: When the claim was submitted (UTC).
+          example: 2026-10-25T10:15:30Z
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the claim last changed (UTC).
+          example: 2026-10-25T10:15:30Z
+    PageResponseClaimSummaryResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClaimSummaryResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+    TimelineEntryResponse:
+      type: object
+      description: An entry of the claim timeline.
+      properties:
+        entryType:
+          type: string
+          description: What happened.
+          enum:
+          - SUBMITTED
+          - ASSIGNED
+          - REASSIGNED
+          - ASSESSMENT_RECORDED
+          - INFORMATION_REQUESTED
+          - INFORMATION_PROVIDED
+          - INFORMATION_REQUEST_CANCELLED
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+          example: ASSIGNED
+        fromStatus:
+          type: string
+          description: "Status before, if the status changed."
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - PENDING_INFORMATION
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+          example: SUBMITTED
+        toStatus:
+          type: string
+          description: Status after.
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - PENDING_INFORMATION
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+          example: UNDER_REVIEW
+        actor:
+          type: string
+          description: "Who did it: a user id, or \"Claims team\" for a claimant looking\
+            \ at a staff action."
+          example: officer.in
+        message:
+          type: string
+          description: Text of the entry.
+          example: Claim picked up for review.
+        visibility:
+          type: string
+          description: "PUBLIC entries are visible to the claimant, INTERNAL ones\
+            \ only to staff."
+          enum:
+          - PUBLIC
+          - INTERNAL
+          example: PUBLIC
+        occurredAt:
+          type: string
+          format: date-time
+          description: When it happened (UTC).
+          example: 2026-10-25T10:15:30Z
+    PageResponseQueueItemResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/QueueItemResponse"
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        last:
+          type: boolean
+    QueueItemResponse:
+      type: object
+      description: "A submitted, unassigned claim in the officer queue."
+      properties:
+        claimNumber:
+          type: string
+          description: Claim number.
+          example: CLM-10003
+        claimType:
+          type: string
+          description: MOTOR or PROPERTY.
+          enum:
+          - MOTOR
+          - PROPERTY
+          example: MOTOR
+        status:
+          type: string
+          description: Always SUBMITTED in the queue.
+          enum:
+          - SUBMITTED
+          - UNDER_REVIEW
+          - PENDING_INFORMATION
+          - ESCALATED
+          - APPROVED
+          - REJECTED
+          - SETTLED
+          example: SUBMITTED
+        marketCode:
+          type: string
+          description: Market code of the claim.
+          example: IN
+        currencyCode:
+          type: string
+          description: Currency of every amount of the claim.
+          example: INR
+        claimedAmount:
+          type: number
+          description: Amount claimed.
+          example: 45000.0
+        incidentDate:
+          type: string
+          format: date
+          description: Day of the incident.
+          example: 2026-10-15
+        claimantUserId:
+          type: string
+          description: User id of the claimant.
+          example: claimant.in
+        createdAt:
+          type: string
+          format: date-time
+          description: When the claim was submitted (UTC).
+          example: 2026-10-25T10:15:30Z
+        ageHours:
+          type: integer
+          format: int64
+          description: Whole hours since submission.
+          example: 3
+        slaBreached:
+          type: boolean
+          description: True when ageHours is above the first-review target (app.sla.first-review-hours).
+          example: false
+  securitySchemes:
+    bearerAuth:
+      type: http
+      description: Paste the accessToken returned by the login operation. Do not add
+        the word Bearer.
+      scheme: bearer
+      bearerFormat: JWT
