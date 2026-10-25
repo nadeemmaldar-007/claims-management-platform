@@ -1,6 +1,6 @@
 # 02. Architecture
 
-Status: **partly Implemented.** `shared`, `config`, `security`, `identity`, `market`, `policy`, `bootstrap` and, except for settlement, `claim` are built (prompts 2 to 4), and `integration` has its outbox write side. `notification`, `reporting`, the outbox relay and the payment gateway are **Planned** until the prompt that builds them completes.
+Status: **Implemented.** All eleven modules are built (prompts 2 to 5). The Docker files, the committed OpenAPI contract and the full reconciliation of the documents come in the last prompt.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 2, 3, 6, 8.
 
 ## 1. Architecture drivers and quality attributes
@@ -44,10 +44,10 @@ Why a modular monolith rather than microservices or one undivided package:
 | `identity` | Users, roles, login, registration, current-user resolution, adapter from users to Spring's `UserDetailsService` | Implemented |
 | `market` | The six markets: country, currency, escalation threshold | Implemented |
 | `policy` | Policy reference data (a local snapshot standing in for the policy administration system) and the adapter that implements claim's `PolicyLookup` port | Implemented |
-| `claim` | Core: first notice of loss, workflow, queue and pick-up, assignment, assessment, information requests, decisions, settlement, timeline, claim numbers | Implemented except settlement (prompt 5) |
-| `notification` | In-app notifications, event handlers, `NotificationChannel` port and the logging email adapter | Planned |
-| `reporting` | Workload, performance, aging, exposure, overview (read side) | Planned |
-| `integration` | Transactional outbox, relay, payment gateway adapter | Outbox write side Implemented; relay and gateway Planned |
+| `claim` | Core: first notice of loss, workflow, queue and pick-up, assignment, assessment, information requests, decisions, settlement, timeline, claim numbers | Implemented |
+| `notification` | In-app notifications, event handlers, `NotificationChannel` port and the logging email adapter | Implemented |
+| `reporting` | Workload, performance, aging, exposure, overview (read side) | Implemented |
+| `integration` | Transactional outbox, relay, payment gateway adapter | Implemented |
 | `bootstrap` | Composition root: demo-data `DataInitializer` and the root redirect controller (`bootstrap.api`). Nothing depends on it | Implemented |
 
 ### The claim module as built (prompt 4)
@@ -63,7 +63,42 @@ Why a modular monolith rather than microservices or one undivided package:
 | Port | `PolicyLookup` and `PolicyView` (`claim.service`), implemented by `policy.infrastructure.PolicySnapshotLookup` | `claim` imports nothing from `policy`; `PolicyView` has its own status enum ([ADR 0008](adr/0008-ports-and-adapters-for-external-integrations.md)) |
 | Event write side | `ClaimEvents` (builds the eight events), `shared.event.DomainEventPublisher` (the port), `integration.service.OutboxDomainEventPublisher` (the adapter) | A service raises an event in the same transaction as the state change; the publisher requires that transaction (`MANDATORY`). The relay that delivers the rows is built in prompt 5 |
 
-The three architecture test classes in `src/test/java/com/apac/claims/architecture` are the first of the executable rules (prompt 6 completes them). `ModuleDependencyRulesTest` is table-driven: it holds the table of section 4 as data, computes for every module the modules its classes really depend on, and reports the class, the target and the module pair of every dependency the table does not allow; the other tests check cycles, the special rules of section 4, and that no module uses another module's `api` or `infrastructure` package. `LayerRulesTest` checks the layers of section 5 inside every feature module, and `CodingRulesTest` the coding conventions. The two named exceptions are recorded in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md).
+The three architecture test classes in `src/test/java/com/apac/claims/architecture` hold the executable rules (prompt 4 wrote the first ones, prompt 5 completed them). `ModuleDependencyRulesTest` is table-driven: it holds the table of section 4 as data, computes for every module the modules its classes really depend on, and reports the class, the target and the module pair of every dependency the table does not allow; the other tests check cycles, the special rules of section 4, and that no module uses another module's `api` or `infrastructure` package. `LayerRulesTest` checks the layers of section 5 inside every feature module, and `CodingRulesTest` the coding conventions. The two named exceptions are recorded in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md).
+
+### The integration, notification and reporting modules as built (prompt 5)
+
+| Part | Classes | Notes |
+|---|---|---|
+| Outbox relay | `integration.service.OutboxRelay`, `integration.infrastructure.OutboxRelayScheduler` | `processBatch()` takes the due `PENDING` rows oldest first and handles each in a transaction of its own (`REQUIRES_NEW`): read the envelope, call every `DomainEventHandler`, mark `PROCESSED`. A handler failure rolls back that event only; the attempt, the error (never the payload) and the next time (2, 4, 8, 16 seconds, doubling) are written in a **new** transaction, and the row becomes `FAILED` after `app.outbox.relay.max-attempts`. The scheduler (`@Scheduled`, `@EnableScheduling`) exists only when `app.outbox.relay.enabled` is true and catches every exception. Single instance, at least once; scaling out needs `SELECT ... FOR UPDATE SKIP LOCKED` |
+| Event names | `shared.event.EventTypes` | In the kernel, so that `notification` reads the names of the events without depending on `claim` |
+| Notifications | `notification.service.NotificationEventHandler`, `NotificationService`, port `NotificationChannel`, adapter `notification.infrastructure.LoggingEmailChannel`, `notification.api.NotificationController` | The handler works from the event payload alone, so `notification` never imports `claim`. Creating a notification is idempotent: an existence check, then the unique `(source_event_id, recipient_id)` constraint, with the insert in a transaction of its own so that a duplicate cannot spoil the relay's transaction. The channel logs a masked address and never throws |
+| Payment port | `claim.service.PaymentGateway` (with `PaymentRequest`, `PaymentReceipt`, `PaymentGatewayException`), adapter `integration.payment.SimulatedPaymentGateway`, use case `claim.service.ClaimSettlementService` | The settlement checks who and which status, calls the gateway, and only then changes the claim and writes the timeline entry and the event; a gateway failure rolls everything back (502). The adapter is idempotent by claim number and works in its own transaction (`REQUIRES_NEW`), so a recorded payment survives a rollback of the claim transaction and a retry gets the same reference |
+| Reporting (read side) | `reporting.service.ReportingService`, the calculators `ExposureCalculator`, `AgingCalculator`, `WorkloadCalculator`, `PerformanceCalculator`, `CurrencyConverter`, `reporting.api.ReportsController` | One query loads the claims of the scope (an entity graph, no query per claim); the figures are copied into plain `ClaimFigures` and added up in Java by the calculators, which are tested with hand-made data and a fixed clock. Nothing is written or cached. `RateConfigurationCheck` stops the start-up when the currency of a market has no configured rate. At a larger scale the next step is a read model or SQL aggregation |
+| Sample claims | `bootstrap.SampleClaimSeeder` | Four claims through the same services the controllers call, only when `app.seed.sample-claims` is true and no claim exists |
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant S as Claim service
+    participant DB as Database
+    participant R as OutboxRelay
+    participant H as NotificationEventHandler
+    participant C as NotificationChannel
+
+    U->>S: approve claim
+    S->>DB: claim, timeline entry and outbox row (one transaction)
+    S-->>U: 200
+    loop every second
+        R->>DB: due PENDING rows, oldest first
+        R->>H: handle(event) in a transaction per event
+        H->>DB: notification per recipient (unique per event and recipient)
+        H->>C: send (logs a masked address)
+        R->>DB: mark PROCESSED, or attempts, error and next time
+    end
+```
+
+The architecture tests now hold 35 rules (prompts 4 and 5): the module table, cycles, the special module rules (`notification` never depends on `claim`; `reporting` depends on neither `notification`, `integration` nor `policy` and never writes), the layers, where entities, repositories, ports and schedules may live, `@PreAuthorize` on every path that is not public (and only with constants of `Authz`), and the coding rules. The three named exceptions are in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md).
 
 ## 4. Allowed module dependencies
 
@@ -207,7 +242,7 @@ Status: **Implemented** in prompt 3. These are the real classes.
 | Correlation id | `CorrelationIdFilter` runs first (`@Order(HIGHEST_PRECEDENCE)`). `X-Correlation-Id` is echoed only when it matches `^[A-Za-z0-9._-]{1,64}$`; otherwise a UUID is generated. The id goes into the logging context, onto the response header before the chain runs (so a 401 from the security filters has it too), and into every error body; the context entry is removed in a `finally` block |
 | Logging | SLF4J only; the log pattern is `%5p [%X{correlationId:-}]`, so every request-time line shows the id and start-up lines show an empty one. No standard streams, no `java.util.logging`; 4xx responses are logged at DEBUG, anticipated 5xx at WARN without a stack trace, unexpected errors at ERROR with the stack trace |
 | Health | `GET /actuator/health` is public; `info` is also exposed but needs a token; nothing else |
-| Outbox visibility | Event status, attempts and last error are stored in `outbox_events`, so a failed delivery can be diagnosed with a query (Planned) |
+| Outbox visibility | Event status, attempts and last error are stored in `outbox_events`, so a failed delivery can be diagnosed with a query; the relay logs one INFO line per delivered event (type and claim number) and one WARN per failure, never the payload |
 | Not included | Metrics registry, tracing backend and alerting. They would be added at deployment time |
 
 ## 9. Deployment view

@@ -36,3 +36,9 @@ The relay in [ADR 0005](0005-transactional-outbox-no-message-broker.md) dispatch
 - Every new handler must define and test its own idempotency rule.
 - Ordering across events is not guaranteed after a retry.
 - `FAILED` rows need manual attention (there is no automatic re-queue in this version).
+
+## Implementation note (prompt 5)
+
+- The delay after a failed attempt is `2^attempts` seconds (2, 4, 8, 16), a row becomes `FAILED` when `attempts` reaches `max-attempts` (5), and a later event is never held up by an earlier failure. The failure is recorded in a new transaction, otherwise the counter would be rolled back with the failed delivery. The stored error is the exception class and message cut to 1000 characters; the payload is never copied into it, not even for an envelope that cannot be read.
+- The only consumer is the notification handler. It is idempotent in two steps: it asks whether the pair (event, recipient) already has a notification, and the unique constraint catches a duplicate that slips past the question (the insert runs in a transaction of its own, because on PostgreSQL a violated constraint would otherwise spoil the transaction of the relay). Tests deliver the events of a claim twice and count the notifications.
+- Because delivery repeats events, a reassigned or deactivated recipient is not an error: a recipient who no longer exists is skipped with a warning.

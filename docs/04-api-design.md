@@ -1,6 +1,6 @@
 # 04. API Design
 
-Status: **partly Implemented.** The error contract, correlation ids, the authentication, user and market endpoints and the health endpoint were built and verified in prompt 3. The policy endpoints and every claim endpoint except settlement (submission, list, queue, detail, timeline, pick-up, assignment, assessments, information requests, escalation, approval, rejection) were built and verified in prompt 4. The catalogue in section 4 has a Status column. Settlement, notifications and reports are still **Planned**. The committed contract `src/main/resources/openapi/claims-api.yaml` is exported from the running application in the last prompt; until then this document is the design.
+Status: **Implemented**, except that the committed contract `src/main/resources/openapi/claims-api.yaml` is exported from the running application in the last prompt. The error contract, correlation ids, the authentication, user and market endpoints and the health endpoint were built in prompt 3; the policy endpoints and the claim endpoints (submission, queue, pick-up, assignment, assessments, information requests, escalation, approval, rejection) in prompt 4; settlement, the notification endpoints and the five reports in prompt 5. The catalogue in section 4 has a Status column.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 5, 6, 7.
 
 ## 1. Conventions
@@ -154,16 +154,16 @@ All paths are under `/api/v1` except `/actuator/health`. "Any" means any logged-
 | `POST /claims/{claimNumber}/escalate` | OFFICER | 200; 400 (`remarks` 10 to 1000 characters); 403 (manager, claimant, or an officer who is not the assignee); 404; 409 `CLAIM_INVALID_TRANSITION` | Implemented |
 | `POST /claims/{claimNumber}/approve` | OFFICER, MANAGER | 200 (the body may be left out); 400 (amount not above 0, or too many decimal places); 403 (not the assignee, or an officer on an ESCALATED claim); 404; 409 `ASSESSMENT_REQUIRED`, `CLAIM_INVALID_TRANSITION`, `CONCURRENT_MODIFICATION`; 422 `APPROVAL_LIMIT_EXCEEDED`, or `approvedAmount` above the recommended payout | Implemented |
 | `POST /claims/{claimNumber}/reject` | OFFICER, MANAGER | 200; 400 (`reasonCode`, `remarks`); 403 (not the assignee, or an officer on an ESCALATED claim); 404; 409 `CLAIM_INVALID_TRANSITION` | Implemented |
-| `POST /claims/{claimNumber}/settle` | OFFICER, MANAGER | 200; 400; 404; 409 `CLAIM_INVALID_TRANSITION`; 502 `PAYMENT_GATEWAY_UNAVAILABLE` | Planned |
-| `GET /notifications?unreadOnly=&page=&size=` | any | 200 | Planned |
-| `GET /notifications/unread-count` | any | 200 | Planned |
-| `POST /notifications/{id}/read` | any | 200; 404 (not the caller's notification) | Planned |
-| `POST /notifications/read-all` | any | 200 | Planned |
-| `GET /reports/overview` | OFFICER (own market), MANAGER | 200 | Planned |
-| `GET /reports/exposure` | MANAGER | 200 | Planned |
-| `GET /reports/aging` | OFFICER (own market), MANAGER | 200 | Planned |
-| `GET /reports/workload` | OFFICER (own team), MANAGER | 200 | Planned |
-| `GET /reports/performance?from=&to=&marketCode=` | OFFICER (own team), MANAGER | 200; 400 (`from` after `to`) | Planned |
+| `POST /claims/{claimNumber}/settle` | OFFICER, MANAGER | 200 (the claim, with its `settlement` block); 400 (`paymentMethod` missing or unknown, `remarks` too long); 403 (claimant, or an officer who is not the assignee); 404; 409 `CLAIM_INVALID_TRANSITION` (not APPROVED, or already settled); 502 `PAYMENT_GATEWAY_UNAVAILABLE` (the claim stays APPROVED and nothing is written) | Implemented |
+| `GET /notifications?unreadOnly=&page=&size=` | any | 200, own notifications only, newest first; 400 (page, size) | Implemented |
+| `GET /notifications/unread-count` | any | 200 `{ "unreadCount": n }` | Implemented |
+| `POST /notifications/{id}/read` | any | 200 (the notification, with `readAt`); 404 (unknown id, or a notification of another user) | Implemented |
+| `POST /notifications/read-all` | any | 200 `{ "updated": n }` | Implemented |
+| `GET /reports/overview?marketCode=` | OFFICER (own market), MANAGER | 200; 400 (unknown `marketCode`); 403 (claimant) | Implemented |
+| `GET /reports/exposure?marketCode=` | MANAGER | 200; 400 (unknown `marketCode`); 403 (officer, claimant) | Implemented |
+| `GET /reports/aging?marketCode=` | OFFICER (own market), MANAGER | 200; 400 (unknown `marketCode`); 403 (claimant) | Implemented |
+| `GET /reports/workload?marketCode=` | OFFICER (own team), MANAGER | 200; 400 (unknown `marketCode`); 403 (claimant) | Implemented |
+| `GET /reports/performance?from=&to=&marketCode=` | OFFICER (own team), MANAGER | 200; 400 (`from` after `to`, bad date, unknown `marketCode`); 403 (claimant) | Implemented |
 | `GET /actuator/health` | public | 200 | Implemented |
 
 Also public: `GET /` (redirects to Swagger UI, hidden from OpenAPI), `/swagger-ui.html`, `/swagger-ui/**`, `/v3/api-docs/**`.
@@ -189,9 +189,14 @@ Settled in prompt 4 (no longer open):
 9. A claimant never receives staff user ids: the assigned officer is left out, the person who decided and the actor of a timeline entry are shown as "Claims team", and the reason an officer gave for an escalation is replaced by a neutral text. The latest assessment, its notes and the INTERNAL timeline entries are staff only.
 10. The incident date may be at most tomorrow in UTC, so that a claimant in a market ahead of UTC can report an incident from today (specification amendment of prompt 4).
 
-Still open for a later prompt:
+Settled in prompt 5 (no longer open):
 
-- An OFFICER passing a `marketCode` other than their own to a report is treated as out of scope (404) (prompt 6).
+1. **Report scope.** An officer sees the market of their own team, a manager sees every market. The optional `marketCode` is applied **on top of** the scope: a manager can narrow a report to one market, and an officer who asks for another market than their own gets an **empty report** (200, zeros, no rows), exactly as the claim list answers, and learns nothing about that market. An unknown market code is a **400** on `marketCode` for everybody. Claimants get 403 on every report; the exposure report is for managers only (403 for an officer).
+2. **Reports are computed live, in memory.** Every report loads the claims of the scope with one query and adds them up in Java; nothing is stored or cached. Amounts across markets are only added in the base currency, converted figure by figure with the static, illustrative rates (`rateSource` is `STATIC_ILLUSTRATIVE`), rounded half up to two decimals.
+3. **Report definitions** are written in the `@Schema` description of every field (and so in Swagger UI). Ages are whole days or hours since submission; the aging bands are 0-2, 3-7, 8-14 and 15+ days; a queued claim is late after more than `app.sla.first-review-hours`, an open claim that an officer has after more than `app.sla.decision-hours`; the performance period is in whole UTC days, both ends included, default the 30 days that end today; only active officers have rows (a decision of a manager is counted for nobody).
+4. **Settlement** pays the approved amount through the payment gateway port before anything is written. The status of a payment instruction in the schema is `COMPLETED`. A failing gateway is a 502 and leaves the claim APPROVED; a claim is paid once, because the gateway is idempotent by claim number.
+5. **Notifications** are created by the outbox relay, so they appear after the next poll of the relay (every second by default), not inside the request. A user reads, counts and marks only their own; someone else's id is a 404.
+
 
 Settled in prompt 3 (no longer open):
 
@@ -408,7 +413,7 @@ The same claim as the claimant's timeline shows it (real response; the claimant 
 ]
 ```
 
-**Planned (prompt 5): settlement.** `POST /api/v1/claims/CLM-10003/settle` with `{ "paymentMethod": "BANK_TRANSFER" }` will return `200`, status `SETTLED`, a `paymentReference` of the form `PAY-` plus 12 upper-case hexadecimal characters, `settledAmount` and `settledAt`. If the gateway fails the response will be `502 PAYMENT_GATEWAY_UNAVAILABLE`, the claim stays `APPROVED`, and no timeline entry or event is written.
+**Settlement.** `POST /api/v1/claims/CLM-10003/settle` with `{ "paymentMethod": "BANK_TRANSFER", "remarks": "Paid to the account on file." }` returns `200` with the claim: status `SETTLED` and a `settlement` block with `paymentMethod`, a `paymentReference` of the form `PAY-` plus 12 upper-case hexadecimal characters, `settledAmount` (the approved amount) and `settledAt`; the timeline gets a PUBLIC `SETTLED` entry and the outbox a `ClaimSettled` event that carries the reference. Only the assigned officer or a manager may settle (403 otherwise), only an APPROVED claim can be settled (409 `CLAIM_INVALID_TRANSITION`, also for a second settlement). If the payment gateway fails the answer is `502 PAYMENT_GATEWAY_UNAVAILABLE`, the claim stays `APPROVED`, and no timeline entry, no event and no payment is written; asking again succeeds and returns the reference of the payment instruction that is stored.
 
 ### 6.5 Reject and escalate
 

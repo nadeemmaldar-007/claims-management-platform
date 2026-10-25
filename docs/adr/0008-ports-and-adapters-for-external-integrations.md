@@ -44,3 +44,7 @@ The payment gateway is called **before** the claim change is committed; if it fa
 ## Implementation note (prompt 4)
 
 `PolicyLookup` and its `PolicyView` live in `claim.service`; the adapter is `policy.infrastructure.PolicySnapshotLookup`. `PolicyView` carries its own status enum and uses claim's own `ClaimType` for the product type, so `claim` imports nothing from `policy` and the module rule that forbids it holds. The two other ports (`PaymentGateway`, `NotificationChannel`) are built in prompt 5.
+
+## Implementation note (prompt 5)
+
+`PaymentGateway`, `PaymentRequest`, `PaymentReceipt` and `PaymentGatewayException` live in `claim.service`; the adapter `integration.payment.SimulatedPaymentGateway` stores one `payment_instructions` row per claim number (status `COMPLETED`, the value of the schema) and works in its own transaction, so the record of a payment is kept even if the claim transaction is rolled back afterwards, and a retry returns the same reference. `NotificationChannel` lives in `notification.service` with the adapter `notification.infrastructure.LoggingEmailChannel`. Architecture tests keep the arrangement: a port named `*Gateway`, `*Lookup` or `*Channel` is an interface in a `service` package and is implemented only in an `infrastructure` or `payment` package.

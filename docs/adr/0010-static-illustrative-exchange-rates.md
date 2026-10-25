@@ -33,3 +33,7 @@ Each market works in its own currency (INR, SGD, AUD, JPY, MYR, THB). Managers m
 - The base-currency totals are not real values and do not move with the market.
 - Changing a rate means changing configuration and restarting the application.
 - The rates apply to all dates; there is no historical rate.
+
+## Implementation note (prompt 5)
+
+`reporting.service.CurrencyConverter` multiplies an amount by the rate of its currency and rounds once, half up, to the two decimal places of the base currency; amounts of several markets are converted row by row and then added, never added in their local currencies. The overview, exposure and aging responses carry `baseCurrency` and `rateSource`. The application refuses to start (`RateConfigurationCheck`) if the currency of a market has no rate, so a market added without one is found at start-up. The sums are computed in memory in Java on purpose (see the class documentation of `ReportingService`); a read model or SQL aggregation is the step for a larger volume.

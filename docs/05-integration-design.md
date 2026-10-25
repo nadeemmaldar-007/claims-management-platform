@@ -1,6 +1,6 @@
 # 05. Integration Design
 
-Status: **Planned** (outbox, relay, handlers and adapters are built in the integration prompt).
+Status: **Implemented** in prompt 5 (the outbox relay, the notification handler and channel, the payment gateway adapter and settlement); the publisher was built in prompt 4. The section "As built" at the end lists what differs from the design.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 3 and 8.
 
 ## 1. Two kinds of integration
@@ -172,3 +172,13 @@ If a second system must consume claim events, the change is confined to one plac
 ## 8. Scaling the relay
 
 One relay instance is assumed. With several application instances, two relays could pick up the same row and send duplicate events. The fix is to select due rows with `FOR UPDATE SKIP LOCKED` (PostgreSQL) so each relay locks a different batch. It is not built because the tests run on H2 in PostgreSQL mode and the load does not need it.
+
+## 9. As built (prompt 5)
+
+The design above was implemented as written. Three details are worth knowing:
+
+- **Transactions.** The relay handles each event in a transaction of its own (`REQUIRES_NEW`) and records a failure in a second, new transaction. The notification insert has a transaction of its own as well, so that a duplicate caught by the unique constraint cannot make the transaction of the relay unusable on PostgreSQL. The payment adapter also uses its own transaction, so that a payment that was made is not rolled back with the claim.
+- **Payment status.** The `payment_instructions` table allows `INITIATED`, `COMPLETED` and `FAILED`; a successful payment is stored as `COMPLETED`.
+- **Settlement order.** The settlement checks the actor and the status, calls the gateway, and only then changes the claim, writes the timeline entry and the event. A gateway failure is a 502 and nothing is written; a failure after the payment leaves the payment instruction in place, and the retry returns its reference.
+
+Verified against the real PostgreSQL database in prompt 5: the first start delivered the 24 events left by earlier smoke runs, the smoke script (two runs) settled claims, and the claimant's notifications arrived within the 15 seconds the script waits (the relay polls every second).

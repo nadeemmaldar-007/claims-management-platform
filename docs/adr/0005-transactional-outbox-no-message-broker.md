@@ -39,3 +39,7 @@ A message broker (Apache Kafka) exists on the development machine but is intenti
 - The relay is a single instance; several instances would need `FOR UPDATE SKIP LOCKED`.
 - The outbox table grows; a purge job is not built in this version.
 - Delivery is at-least-once, so handlers must be idempotent ([ADR 0006](0006-at-least-once-delivery-idempotent-consumers.md)).
+
+## Implementation note (prompt 5)
+
+The relay is `integration.service.OutboxRelay`, called by `OutboxRelayScheduler` every `app.outbox.relay.poll-interval-ms` (1000 ms) while `app.outbox.relay.enabled` is true; `processBatch()` can also be called directly, which is how the tests drive it (the scheduler is off in the test profile). Each event is handled in a transaction of its own (`REQUIRES_NEW`), so one failing event neither rolls back nor blocks the others. The names of the events moved to the kernel (`shared.event.EventTypes`), so that the consumers need not depend on the claim module. Against the real database, the first start after prompt 5 delivered the 24 events that the smoke runs of prompt 4 had left `PENDING`, and the 32 of the two new runs, without a single failure.
