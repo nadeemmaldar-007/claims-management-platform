@@ -40,3 +40,7 @@ The payment gateway is called **before** the claim change is committed; if it fa
 - More interfaces and indirection than direct calls.
 - The simulated adapters prove the flow, not that a real system behaves the same way (timeouts, partial failures, authentication), which are therefore not tested.
 - The policy data is a snapshot that a manager maintains through the API; it can be out of date compared with a real policy system.
+
+## Implementation note (prompt 4)
+
+`PolicyLookup` and its `PolicyView` live in `claim.service`; the adapter is `policy.infrastructure.PolicySnapshotLookup`. `PolicyView` carries its own status enum and uses claim's own `ClaimType` for the product type, so `claim` imports nothing from `policy` and the module rule that forbids it holds. The two other ports (`PaymentGateway`, `NotificationChannel`) are built in prompt 5.

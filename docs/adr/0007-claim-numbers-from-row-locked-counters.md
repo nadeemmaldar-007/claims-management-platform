@@ -35,3 +35,7 @@ Claims need human-readable numbers that staff and claimants can quote: `CLM-1000
 - Submissions of the same type are serialised on the counter row until the transaction commits. That is acceptable for the expected volume but would be a bottleneck at high submission rates.
 - The counter rows must exist; they are created by migration.
 - Gap-free numbering depends on the generator always being called inside the claim transaction, which `MANDATORY` propagation enforces.
+
+## Implementation note (prompt 4)
+
+Nothing in the decision changed. `ClaimSubmissionService` takes the number only after every validation (request, policy checks, duplicate check) has passed, so a request that is refused never uses up a number and never holds the counter lock; the lock is held from the number to the commit of the claim, which is short. Tests compare the counter before and after refused submissions (400, 422 and 409) and after an idempotent replay, and check that the two claim types count independently.

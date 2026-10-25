@@ -328,3 +328,19 @@ The six non-constraint indexes are `ix_claims_claimant_id`, `ix_claims_market_id
 - **`OutboxEvent` implements `Persistable<String>`** with a transient "new" flag, because its id is the application-assigned event UUID. A test proves that saving a second new event with the same id fails with a duplicate-key error, which shows an INSERT is issued and not a merge.
 - **Claim number counter.** The lock query `ClaimCounterRepository.findForUpdate` (`PESSIMISTIC_WRITE`) is tested for correctness and for the increment inside a transaction on H2. Contention between two real threads is not tested yet; it is first exercised when the claim number generator is built.
 - **Dependency.** Because `app_users.market_id` is a foreign key to `markets`, `AppUser` has an association to `Market`, so `identity` depends on `market`. See the clarification in [02-architecture.md](02-architecture.md).
+
+## 8. How the claims core uses the tables (prompt 4)
+
+Prompt 4 changed no migration and no entity column: `V1` to `V6` are untouched. This section records how the code fills the tables.
+
+| Table | What the claims core does |
+|---|---|
+| `claim_counters` | `ClaimNumberGenerator.next(type)` reads the row of the claim type with a pessimistic write lock (`@Transactional(MANDATORY)`) and increments `next_value`. The number is taken only after every validation of the request has passed, so a refused submission never uses a number. The format is `CLM-<n>` for motor and `CLP-<n>` for property |
+| `claims` | A claim is inserted as `SUBMITTED` with the policy figures copied from the policy at that moment (`policy_sum_insured`, `policy_deductible`), the market and currency of the claimant, and the motor or the property columns, never both. Pick-up and assignment set `assigned_officer_id` and `assigned_at` and move the claim to `UNDER_REVIEW`; a reassignment changes both columns and keeps the status. Approval sets `decision_type` `APPROVED`, `decided_by_id`, `decided_at`, `decision_remarks` and `approved_amount`; rejection sets `decision_type` `REJECTED`, `decision_reason` and `decision_remarks`, and leaves `approved_amount` empty. The settlement columns stay empty until prompt 5. `version` is managed by Hibernate and is what decides two simultaneous pick-ups |
+| `claim_assessments` | One row per assessment, never updated. `deductible_applied` is the claim's `policy_deductible`; `recommended_payout` is computed by the system. The newest row (highest `id`) is the one that counts |
+| `information_requests` | `OPEN` on creation with `due_at`; `RESPONDED` with `response_text`, `responded_by_id` and `responded_at`; or `CANCELLED`. Whether a request is overdue is worked out when it is read, from `status` and `due_at`, and is not stored |
+| `claim_timeline_entries` | Written only by `TimelineService`, inside the transaction of the change it describes. `from_status` is empty when the status did not change; `to_status` is always filled. `actor_user_id` is the user id of whoever acted. `message` is cut at 1000 characters. Assessments and reassignments are `INTERNAL`, everything else `PUBLIC` |
+| `idempotency_keys` | One row per `(user, key)` with the claim number it produced, written in the claim's transaction. A second request with the same key at the same moment fails on the unique constraint and rolls back |
+| `outbox_events` | `OutboxDomainEventPublisher` writes one `PENDING` row per event, in the transaction of the state change, with the whole envelope as JSON in `payload` (event id, type, aggregate, time, version, payload; at most 8000 characters). `aggregate_id` is the claim number |
+
+The `claim` module reaches policy data only through the `PolicyLookup` port, so it never reads the `policies` table itself.

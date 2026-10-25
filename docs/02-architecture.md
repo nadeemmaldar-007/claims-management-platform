@@ -1,6 +1,6 @@
 # 02. Architecture
 
-Status: **partly Implemented.** `shared`, `config`, `security`, `identity`, `market` and `bootstrap` are built (prompts 2 and 3); the other modules are **Planned** until the prompt that builds them completes.
+Status: **partly Implemented.** `shared`, `config`, `security`, `identity`, `market`, `policy`, `bootstrap` and, except for settlement, `claim` are built (prompts 2 to 4), and `integration` has its outbox write side. `notification`, `reporting`, the outbox relay and the payment gateway are **Planned** until the prompt that builds them completes.
 Date: 2026-10-25. Source of truth: [PROJECT_SPEC.md](PROJECT_SPEC.md) sections 2, 3, 6, 8.
 
 ## 1. Architecture drivers and quality attributes
@@ -43,12 +43,27 @@ Why a modular monolith rather than microservices or one undivided package:
 | `security` | JWT issuing and decoding, security filter chain, JSON 401 and 403 handlers. Depends on no feature module | Implemented |
 | `identity` | Users, roles, login, registration, current-user resolution, adapter from users to Spring's `UserDetailsService` | Implemented |
 | `market` | The six markets: country, currency, escalation threshold | Implemented |
-| `policy` | Policy reference data (a local snapshot standing in for the policy administration system) and the adapter that implements claim's `PolicyLookup` port | Planned |
-| `claim` | Core: first notice of loss, workflow, queue and pick-up, assignment, assessment, information requests, decisions, settlement, timeline, claim numbers | Planned |
+| `policy` | Policy reference data (a local snapshot standing in for the policy administration system) and the adapter that implements claim's `PolicyLookup` port | Implemented |
+| `claim` | Core: first notice of loss, workflow, queue and pick-up, assignment, assessment, information requests, decisions, settlement, timeline, claim numbers | Implemented except settlement (prompt 5) |
 | `notification` | In-app notifications, event handlers, `NotificationChannel` port and the logging email adapter | Planned |
 | `reporting` | Workload, performance, aging, exposure, overview (read side) | Planned |
-| `integration` | Transactional outbox, relay, payment gateway adapter | Planned |
+| `integration` | Transactional outbox, relay, payment gateway adapter | Outbox write side Implemented; relay and gateway Planned |
 | `bootstrap` | Composition root: demo-data `DataInitializer` and the root redirect controller (`bootstrap.api`). Nothing depends on it | Implemented |
+
+### The claim module as built (prompt 4)
+
+| Part | Classes | Notes |
+|---|---|---|
+| Workflow rules | `ClaimWorkflow`, `ClaimAction`, `AssessmentCalculator` (all `claim.domain`) | Pure Java with no Spring or I/O: the whole transition table and the payout formula are tested exhaustively |
+| Scope and authority | `ClaimScope`, `ClaimActionSupport` (`claim.service`) | One place decides who may see a claim (404 outside the scope) and one answers "assigned officer or manager" (403) |
+| Use cases | `ClaimSubmissionService`, `ClaimQueryService`, `ClaimAssignmentService`, `ClaimAssessmentService`, `InformationRequestService`, `ClaimDecisionService` | Each public method is one transaction and one use case; each class is under 250 lines |
+| Mapping | `ClaimMapper` | Maps entities to records inside the transaction and applies what a claimant may not see (staff user ids, assessments, the reason of an escalation) |
+| Timeline | `TimelineService` | The only creator of timeline entries; visibility is decided by the entry type |
+| Claim numbers | `ClaimNumberGenerator` | Row-locked counters, `MANDATORY` transaction, taken after all validation ([ADR 0007](adr/0007-claim-numbers-from-row-locked-counters.md)) |
+| Port | `PolicyLookup` and `PolicyView` (`claim.service`), implemented by `policy.infrastructure.PolicySnapshotLookup` | `claim` imports nothing from `policy`; `PolicyView` has its own status enum ([ADR 0008](adr/0008-ports-and-adapters-for-external-integrations.md)) |
+| Event write side | `ClaimEvents` (builds the eight events), `shared.event.DomainEventPublisher` (the port), `integration.service.OutboxDomainEventPublisher` (the adapter) | A service raises an event in the same transaction as the state change; the publisher requires that transaction (`MANDATORY`). The relay that delivers the rows is built in prompt 5 |
+
+The three architecture test classes in `src/test/java/com/apac/claims/architecture` are the first of the executable rules (prompt 6 completes them). `ModuleDependencyRulesTest` is table-driven: it holds the table of section 4 as data, computes for every module the modules its classes really depend on, and reports the class, the target and the module pair of every dependency the table does not allow; the other tests check cycles, the special rules of section 4, and that no module uses another module's `api` or `infrastructure` package. `LayerRulesTest` checks the layers of section 5 inside every feature module, and `CodingRulesTest` the coding conventions. The two named exceptions are recorded in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md).
 
 ## 4. Allowed module dependencies
 
@@ -145,7 +160,7 @@ Cross-module rules that the table does not show:
 
 Rules that follow: entities never leave the service layer (services map them to DTOs inside the transaction); controllers are `@RestController` classes in `..api..` named `*Controller`; constructor injection only. See [ADR 0002](adr/0002-pragmatic-hexagonal-layering.md).
 
-One consequence found in prompt 3: the request and response records live in `api.dto`, but the **services** create the response records (so that entities are mapped inside the transaction). `service` therefore depends on `api.dto`, and only on that part of `api`. The layer rules in the architecture tests (prompts 4 to 6) must allow `..api.dto..` to be used from `service`, and keep controllers, which are the rest of `api`, out of reach.
+One consequence found in prompt 3: the request and response records live in `api.dto`, but the **services** create the response records (so that entities are mapped inside the transaction). `service` therefore depends on `api.dto`, and only on that part of `api`. `LayerRulesTest` allows `..api.dto..` to be used from `service` and keeps controllers, which are the rest of `api`, out of reach; the exception, and the use of the kernel `shared.api` by every module, are recorded in [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md).
 
 ## 6. Communication styles
 

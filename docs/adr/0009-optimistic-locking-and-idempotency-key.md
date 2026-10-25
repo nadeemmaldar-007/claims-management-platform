@@ -39,3 +39,10 @@ Holding database locks across HTTP requests is not an option, and the workflow t
 - The loser of a race must reload and retry; the application does not retry automatically.
 - A repeated key returns the original claim without comparing the request body, so a client that reuses a key for different content gets the old claim.
 - Version conflicts on other transitions surface as `CONCURRENT_MODIFICATION`, which clients must handle.
+
+## Implementation note (prompt 4)
+
+- The pick-up flushes the claim **inside the service method** (`saveAndFlush`) and catches `ObjectOptimisticLockingFailureException` there. Without the flush, the exception would only surface at commit, outside the method, and the caller would receive `CONCURRENT_MODIFICATION` instead of `CLAIM_ALREADY_ASSIGNED`. A manager's `assign` from the queue uses the same translation, because it races for the same claim. Tests fire real threads at one claim (two callers, then six) and expect one 200 and the rest `CLAIM_ALREADY_ASSIGNED`; removing the translation makes them fail.
+- A claim that someone has already taken is answered with `CLAIM_ALREADY_ASSIGNED` when it is open, and with `CLAIM_INVALID_TRANSITION` when it is already decided.
+- Two identical submissions with the same key at the same moment both pass the replay check; the second fails on the unique key, its transaction rolls back together with its claim number, and the caller gets a 409 and can retry to receive the replay.
+- The business duplicate check is a read followed by an insert, so it is not atomic; only the idempotency key makes a retry fully safe.

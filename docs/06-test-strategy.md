@@ -39,8 +39,8 @@ End-to-end journeys; security (401, 403, 404); validation and the error contract
 
 ### Architecture rules
 
-- Layer rules inside modules.
-- Modules are free of cycles.
+- Layer rules inside modules (`LayerRulesTest`), with the two named exceptions of [ADR 0014](adr/0014-api-records-and-kernel-api-in-the-layer-rules.md): a service may use the records of its own `api.dto`, and every module may use the kernel `shared.api`.
+- Modules are free of cycles, and every module depends only on what the table of the specification allows (`ModuleDependencyRulesTest`, table-driven).
 - No module depends on another module's `api` or `infrastructure` package.
 - `claim` does not depend on `policy`, `notification`, `reporting` or `integration`.
 - `domain` does not depend on `org.springframework.web`, `jakarta.servlet`, or any `api`, `service` or `infrastructure` package.
@@ -111,7 +111,7 @@ The smoke script prints PASS or FAIL per step and exits with 1 on any failure. I
 |---|---|
 | 2 Data layer | Repository tests for constraints and queries, migration validation, application context test |
 | 3 Security and identity | Security and error-contract integration tests, JWT tests, auth and user endpoints, OpenAPI configuration |
-| 4 Claims core | `ClaimWorkflow` and payout unit tests, submission, idempotency, pick-up race, information request journey, decisions; first ArchUnit rules |
+| 4 Claims core | **Delivered:** `ClaimWorkflow`, payout, claim number and event unit tests; integration tests for submission and validation, visibility and scope, pick-up and assignment (with real-thread races), assessments, information requests, decisions, the outbox write side, policies and the OpenAPI document; unit tests for the mapper, scope, authority, timeline and the lost-race translation; the first ArchUnit rules (module, layer and coding rules) |
 | 5 Integration | Outbox and relay tests, idempotent notifications, payment gateway adapter, settlement and failure |
 | 6 Reporting | Report scope and numbers, SLA and aging unit tests; complete ArchUnit rules; JaCoCo gate |
 | 7 Packaging | Contract test; smoke script run against the live application |
