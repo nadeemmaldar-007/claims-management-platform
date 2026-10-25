@@ -12,7 +12,7 @@ Status: written at design stage (prompt 1) and updated in prompt 2 (data layer);
 - **A team is a market.** An officer sees the claims, workload and performance of their own market.
 - **Escalation threshold is the officer's approval limit,** in local currency, roughly comparable across markets.
 - **Policies belong to the claimant.** A claim is valid only against the claimant's own, active, matching-type policy in their market.
-- **`identity` depends on `market`.** The specification's dependency table omits this edge, but `app_users.market_id` is a foreign key to `markets`, so the dependency exists. It creates no cycle. See [docs/02-architecture.md](docs/02-architecture.md).
+- **`identity` depends on `market`.** `app_users.market_id` is a foreign key to `markets`, so the dependency exists; the specification's dependency table was amended in prompt 3 to include it. It creates no cycle. See [docs/02-architecture.md](docs/02-architecture.md).
 
 ## The ten most important decisions
 

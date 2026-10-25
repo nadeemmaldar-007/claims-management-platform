@@ -62,7 +62,7 @@ This is the single source of truth for the implementation. Later work is done in
 | shared | none |
 | config | shared |
 | security | shared, config |
-| identity | shared, config, security |
+| identity | shared, config, security, market |
 | market | shared, config |
 | claim | shared, config, identity, market |
 | policy | shared, config, identity, market, claim (implements claim's `PolicyLookup` port) |
@@ -70,6 +70,8 @@ This is the single source of truth for the implementation. Later work is done in
 | reporting | shared, config, identity, market, claim |
 | integration | shared, config, claim (implements claim's `PaymentGateway` port; dispatches shared events) |
 | bootstrap | every module (it only wires and seeds); nothing depends on it |
+
+identity depends on market because every user belongs to a market; market depends only on shared and config, so no cycle is created (amended in prompt 3).
 
 Cross-module rules: a module may use another module's `service` classes and `domain` types, never its `api` or `infrastructure` packages. `claim` must not depend on `policy`, `notification`, `reporting` or `integration`; it reaches them only through ports it owns and through the shared event contracts.
 
