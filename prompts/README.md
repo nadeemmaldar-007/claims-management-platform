@@ -9,7 +9,9 @@ Every prompt used to build this project, kept verbatim and in the order it was u
 
 4. [`prompt-04-claims-core.md`](prompt-04-claims-core.md): claim workflow rules and claim numbers, the policy module, claim submission with policy validation and idempotency, the officer queue, pick-up and assignment, assessments, information requests, escalation, approval and rejection, the claim timeline, the write side of the outbox, the first architecture rules, and the live claims journey in the smoke script.
 
-Prompts 5 to 7 (integration, reporting, packaging and finish) are added to this list when they are used. Any extra instruction that changes the work is saved as `prompts/prompt-0N-extra-<topic>.md` and listed here and in the AI journal.
+5. [`prompt-05-integration-and-reporting.md`](prompt-05-integration-and-reporting.md): the outbox relay with retry and backoff, event-driven notifications and their endpoints, the payment gateway port with a simulated adapter and settlement, the five reports, four sample claims seeded through the service layer, the remaining architecture rules and the JaCoCo coverage gate, and the notifications, settlement and reports steps of the smoke script.
+
+Prompt 6 (packaging and finish) is added to this list when it is used. (Until prompt 5 started, the plan had seven prompts; prompt 5 merged integration and reporting, see `docs/PROJECT_SPEC.md` section 16.) Any extra instruction that changes the work is saved as `prompts/prompt-0N-extra-<topic>.md` and listed here and in the AI journal.
 
 Extra instructions saved so far:
 
