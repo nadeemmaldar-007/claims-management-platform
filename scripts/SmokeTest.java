@@ -47,6 +47,7 @@ public class SmokeTest {
         try {
             securityAndIdentity();
             claimsJourney();
+            settlementNotificationsAndReports();
         } catch (RuntimeException e) {
             fail("the script itself failed unexpectedly: " + e);
         }
@@ -254,6 +255,118 @@ public class SmokeTest {
         } else {
             fail("the SG claim was not created, so the rejection steps are skipped");
         }
+    }
+
+    // ---- steps of prompt 5: settlement, notifications and reports ---------------------------------------------
+
+    private static final Pattern PAYMENT_REFERENCE = Pattern.compile("\"paymentReference\"\\s*:\\s*\"(PAY-[0-9A-F]{12})\"");
+    private static final Pattern UNREAD_COUNT = Pattern.compile("\"unreadCount\"\\s*:\\s*(\\d+)");
+
+    private static void settlementNotificationsAndReports() {
+        section("Settlement: a fresh claim from submission to payment");
+        String claimant = login("claimant.in", "Claimant@123", "CLAIMANT");
+        String officer = login("officer.in", "Officer@123", "OFFICER");
+        String manager = login("manager.apac", "Manager@123", "MANAGER");
+        if (claimant == null || officer == null || manager == null) {
+            fail("a seeded account could not log in, so settlement, notifications and reports are skipped");
+            return;
+        }
+        AtomicReference<LocalDate> date = new AtomicReference<>();
+        HttpResponse<String> submitted = step("claimant.in submits a MOTOR claim of 30000.00", 201,
+                () -> submitWithFreshDate(claimant, day -> motorJson("MOT-IN-0001", "30000.00", day), null, date));
+        String claim = claimNumber(submitted, "CLM-");
+        if (claim == null) {
+            fail("the claim was not created, so settlement and notifications are skipped");
+            return;
+        }
+        step("officer.in picks it up", 200, () -> post("/api/v1/claims/" + claim + "/pick-up", "", officer));
+        stepContains("officer.in assesses a loss of 29000.00", 201,
+                () -> post("/api/v1/claims/" + claim + "/assessments", assessmentJson("29000.00", true), officer),
+                "\"recommendedPayout\":24000.00");
+        stepContains("the manager approves the claim", 200,
+                () -> post("/api/v1/claims/" + claim + "/approve", "", manager), "\"status\":\"APPROVED\"");
+        HttpResponse<String> settled = stepContains("the manager settles the claim", 200,
+                () -> post("/api/v1/claims/" + claim + "/settle",
+                        "{\"paymentMethod\": \"BANK_TRANSFER\", \"remarks\": \"Paid to the account on file.\"}",
+                        manager), "\"status\":\"SETTLED\"", "\"settlement\"", "\"settledAmount\":24000.00");
+        check("  the settlement carries a payment reference of the form PAY- and twelve hexadecimal characters",
+                settled != null && PAYMENT_REFERENCE.matcher(settled.body()).find(), "body: " + body(settled));
+        stepContains("settling the same claim again is a conflict", 409,
+                () -> post("/api/v1/claims/" + claim + "/settle", "{\"paymentMethod\": \"CHEQUE\"}", manager),
+                "CLAIM_INVALID_TRANSITION");
+        step("the claimant cannot settle", 403,
+                () -> post("/api/v1/claims/" + claim + "/settle", "{\"paymentMethod\": \"CHEQUE\"}", claimant));
+
+        section("Notifications reach the claimant through the outbox relay");
+        boolean arrived = waitFor(() -> {
+            HttpResponse<String> list = get("/api/v1/notifications?size=50", claimant);
+            return list.statusCode() == 200 && list.body().contains("\"" + claim + "\"")
+                    && (list.body().contains("CLAIM_APPROVED") || list.body().contains("CLAIM_SETTLED"));
+        }, 15);
+        check("a notification about " + claim + " of type CLAIM_APPROVED or CLAIM_SETTLED arrives within 15 seconds",
+                arrived, "the claimant has no such notification after 15 seconds; is the relay running?");
+        HttpResponse<String> unread = stepContains("the claimant's unread count", 200,
+                () -> get("/api/v1/notifications/unread-count", claimant), "unreadCount");
+        String count = unread == null ? null : firstGroup(UNREAD_COUNT, unread.body());
+        check("  the unread count is greater than 0", count != null && Integer.parseInt(count) > 0,
+                "unread count: " + count);
+        HttpResponse<String> list = stepContains("the claimant lists the own notifications", 200,
+                () -> get("/api/v1/notifications?unreadOnly=true&size=50", claimant), "\"claimNumber\"");
+        String notificationId = list == null ? null : firstGroup(ID, list.body());
+        if (notificationId != null) {
+            stepContains("the claimant marks one notification as read", 200,
+                    () -> post("/api/v1/notifications/" + notificationId + "/read", "", claimant), "\"read\":true");
+        } else {
+            fail("there is no notification id to mark as read");
+        }
+        stepContains("the claimant marks all notifications as read", 200,
+                () -> post("/api/v1/notifications/read-all", "", claimant), "\"updated\"");
+        HttpResponse<String> after = stepContains("the unread count afterwards", 200,
+                () -> get("/api/v1/notifications/unread-count", claimant), "\"unreadCount\":0");
+        check("  nothing is unread", after != null && "0".equals(firstGroup(UNREAD_COUNT, after.body())),
+                "body: " + body(after));
+        waitFor(() -> get("/api/v1/notifications?size=1", officer).body().contains("\"claimNumber\""), 15);
+        HttpResponse<String> officerList = get("/api/v1/notifications?size=1", officer);
+        String officersNotification = firstGroup(ID, officerList.body());
+        if (officersNotification != null) {
+            step("another user's notification id is not found", 404,
+                    () -> post("/api/v1/notifications/" + officersNotification + "/read", "", claimant));
+        } else {
+            fail("officer.in has no notification whose id could be tried by the claimant");
+        }
+
+        section("Reports");
+        stepContains("the manager reads the overview", 200, () -> get("/api/v1/reports/overview", manager),
+                "countsByStatus", "SETTLED", "queueSize");
+        stepContains("the manager reads the exposure with the rate source", 200,
+                () -> get("/api/v1/reports/exposure", manager), "STATIC_ILLUSTRATIVE", "outstandingExposureBase");
+        stepContains("the manager reads the aging", 200, () -> get("/api/v1/reports/aging", manager), "15+ days");
+        stepContains("the manager reads the workload", 200, () -> get("/api/v1/reports/workload", manager),
+                "officer.in", "unassignedInQueue");
+        stepContains("the manager reads the performance", 200, () -> get("/api/v1/reports/performance", manager),
+                "officer.in", "approvalRate");
+        stepContains("a period that ends before it starts is a bad request", 400,
+                () -> get("/api/v1/reports/performance?from=2099-01-01&to=2098-01-01", manager), "VALIDATION_FAILED");
+        stepContains("officer.in reads the overview of the own market", 200,
+                () -> get("/api/v1/reports/overview", officer), "countsByStatus");
+        step("officer.in cannot read the exposure", 403, () -> get("/api/v1/reports/exposure", officer));
+        step("the claimant cannot read the overview", 403, () -> get("/api/v1/reports/overview", claimant));
+    }
+
+    /** Checks the condition once a second for up to the given number of seconds; true as soon as it holds. */
+    private static boolean waitFor(Supplier<Boolean> condition, int seconds) {
+        for (int second = 0; second < seconds; second++) {
+            if (condition.get()) {
+                return true;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return condition.get();
     }
 
     /** Submits with a random day of the last 330 and tries another day (up to five times) on DUPLICATE_CLAIM. */
