@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.apac.claims.claim.domain.ClaimCounterRepository;
+import com.apac.claims.claim.domain.ClaimRepository;
 import com.apac.claims.identity.domain.AppUser;
 import com.apac.claims.identity.domain.Role;
 import com.apac.claims.identity.domain.UserRepository;
@@ -52,6 +53,8 @@ class DataInitializerTest {
     private MarketRepository markets;
     @Autowired
     private ClaimCounterRepository counters;
+    @Autowired
+    private ClaimRepository claims;
     @Autowired
     private PasswordEncoder passwordEncoder;
     @Autowired
@@ -245,8 +248,23 @@ class DataInitializerTest {
         }
     }
 
+    /**
+     * Replaces an absolute check (counters still at 10001) that stopped being true once other tests in the shared
+     * database submit claims. What this test is about is the seeder's own effect, so it is measured relatively: a
+     * run of the seeder, with sample claims switched off in the test profile, creates no claim and consumes no
+     * claim number.
+     */
     @Test
-    void noSampleClaimsAreCreatedByThisPrompt() {
-        assertThat(counters.findAll()).allSatisfy(counter -> assertThat(counter.getNextValue()).isEqualTo(10001L));
+    void theSeederCreatesNoClaimsAndConsumesNoClaimNumbers() {
+        long claimsBefore = claims.count();
+        Map<String, Long> countersBefore = counters.findAll().stream()
+                .collect(Collectors.toMap(c -> c.getClaimType().name(), c -> c.getNextValue()));
+
+        initializer.run(new DefaultApplicationArguments());
+
+        assertThat(claims.count()).isEqualTo(claimsBefore);
+        assertThat(counters.findAll().stream()
+                .collect(Collectors.toMap(c -> c.getClaimType().name(), c -> c.getNextValue())))
+                .isEqualTo(countersBefore);
     }
 }

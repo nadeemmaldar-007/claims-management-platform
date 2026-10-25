@@ -107,6 +107,40 @@ class ApiExceptionTest {
     }
 
     @Test
+    void anInvalidTransitionIs409WithTheInvalidTransitionCode() {
+        InvalidTransitionException e = new InvalidTransitionException("A claim that is approved cannot be picked up.");
+
+        assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLAIM_INVALID_TRANSITION);
+        assertThat(e).isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void aClaimThatIsAlreadyAssignedIs409WithItsOwnCode() {
+        ClaimAlreadyAssignedException e = new ClaimAlreadyAssignedException("Another officer took this claim first.");
+
+        assertThat(e.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(e.getErrorCode()).isEqualTo(ErrorCode.CLAIM_ALREADY_ASSIGNED);
+    }
+
+    @Test
+    void forbiddenIs403WithTheAccessDeniedCodeAndIsNotAnAuthenticationFailure() {
+        ForbiddenException e = new ForbiddenException("Only the assigned officer may do this.");
+
+        assertThat(e.getStatus()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(e.getErrorCode()).isEqualTo(ErrorCode.ACCESS_DENIED);
+        assertThat(e).isInstanceOf(ApiException.class).isNotInstanceOf(UnauthenticatedException.class);
+    }
+
+    @Test
+    void unauthenticatedIs401WithTheUnauthenticatedCode() {
+        UnauthenticatedException e = new UnauthenticatedException("Please log in");
+
+        assertThat(e.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(e.getErrorCode()).isEqualTo(ErrorCode.UNAUTHENTICATED);
+    }
+
+    @Test
     void anErrorCodeIsMandatory() {
         assertThatThrownBy(() -> new ConflictException(null, "no code")).isInstanceOf(NullPointerException.class);
     }
