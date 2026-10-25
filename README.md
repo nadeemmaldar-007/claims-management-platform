@@ -27,3 +27,5 @@ To be completed in a later prompt
 ---
 
 Design documents and decision records are in [`docs/`](docs/). The prompts used to build this project are in [`prompts/`](prompts/).
+
+Start with [`NOTES.md`](NOTES.md) (decisions and assumptions), [`docs/PLAN.md`](docs/PLAN.md) (delivery plan) and [`docs/02-architecture.md`](docs/02-architecture.md) (architecture).
