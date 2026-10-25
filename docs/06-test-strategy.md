@@ -67,7 +67,7 @@ End-to-end journeys; security (401, 403, 404); validation and the error contract
 |---|---|---|
 | Build and tests | `mvnw -B clean verify` is green on JDK 21 | Maven |
 | Line coverage | At least 75% for the bundle, excluding DTO records, `config`, the main class and `package-info` | JaCoCo `check` rule in `pom.xml` (since prompt 5) |
-| Test count | At least 80 test methods in total | Counted from the source: 878 test methods in 82 classes |
+| Test count | At least 80 test methods in total | Counted from the source: 913 test methods in 80 classes (878 JUnit methods and 35 ArchUnit rules) |
 | Architecture | All ArchUnit rules pass | The ArchUnit test class, part of `verify` |
 | Contract | Committed OpenAPI file and live API document agree | `OpenApiContractTest` |
 | Working tree | `git status` is clean after each stage | Checked by hand at the end of each prompt |
@@ -117,15 +117,14 @@ The smoke script prints PASS or FAIL per step and exits with 1 on any failure. I
 
 ## 8. Results
 
-Recorded in prompt 6 on a database that had just been dropped and created again, with JDK 21:
+Recorded in prompt 6 with JDK 21. The build figures are those of the final `clean verify`; the smoke script and the log are from the run on a database that had just been dropped and created again:
 
 | Check | Result |
 |---|---|
-| `mvnw -B clean verify` | BUILD SUCCESS: 1396 tests, 0 failures, 0 errors, 0 skipped |
+| `mvnw -B clean verify` | BUILD SUCCESS in 4 min 4 s: 1398 tests, 0 failures, 0 errors, 0 skipped |
 | JaCoCo line coverage | 95.58% (2379 of 2489 lines), gate 75%, "All coverage checks have been met" |
 | ArchUnit | 35 rules, all passing (`ModuleDependencyRulesTest` 14, `LayerRulesTest` 15, `CodingRulesTest` 6) |
-| Test classes | 82: 43 unit, 3 repository, 33 integration, 3 architecture |
+| Test classes | 80: 33 unit, 12 repository, 32 integration, 3 architecture |
 | Smoke script | 165 of 165 steps passed in each of two consecutive runs against the packaged jar on PostgreSQL 17.6; the second run is saved in [smoke-test-output.txt](smoke-test-output.txt) |
 | Application log of that run | 0 ERROR lines, no stack trace, no password, token or request body; 8 WARN lines, all of them the deliberate failed logins of the script (user id and requested role only) |
 
-`OpenApiContractTest` (2 test methods) was added after the full run above and was run on its own (2 passed); the final verification of prompt 6 includes it.

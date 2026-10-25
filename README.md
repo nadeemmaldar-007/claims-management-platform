@@ -32,7 +32,7 @@ Not used, on purpose: a frontend, a message broker, Lombok, Testcontainers, file
 | Planning, Architecture and Design Thinking | [`docs/01-problem-analysis.md`](docs/01-problem-analysis.md) (problem, personas, scope, assumptions), [`docs/PLAN.md`](docs/PLAN.md) (delivery plan, risks, scope cuts), [`docs/02-architecture.md`](docs/02-architecture.md), 14 decision records in [`docs/adr/`](docs/adr/), [`NOTES.md`](NOTES.md), [`docs/requirements-traceability.md`](docs/requirements-traceability.md) (R1 to R13 to endpoints and tests) |
 | Service and API Design | [`docs/04-api-design.md`](docs/04-api-design.md) (conventions, error contract, 36 operations), the controllers in the `api` packages under `src/main/java/com/apac/claims`, [`src/main/resources/openapi/claims-api.yaml`](src/main/resources/openapi/claims-api.yaml) and `OpenApiContractTest`, [ADR 0011](docs/adr/0011-api-versioning-error-contract-correlation-ids.md) |
 | Clean Architecture and Engineering Discipline | Eleven modules and four layers enforced by 35 ArchUnit rules (`src/test/java/com/apac/claims/architecture`), [ADR 0001](docs/adr/0001-modular-monolith-with-enforced-module-boundaries.md), [ADR 0002](docs/adr/0002-pragmatic-hexagonal-layering.md), [ADR 0014](docs/adr/0014-api-records-and-kernel-api-in-the-layer-rules.md); constructor injection only, records for DTOs, Javadoc on every class, SLF4J only, one injected `Clock`; conventional commits (`git log --oneline`); the 75% coverage gate in `pom.xml` |
-| Backend Test Automation | 82 test classes under `src/test/java` ([`docs/06-test-strategy.md`](docs/06-test-strategy.md)), `scripts/SmokeTest.java` and its recorded output [`docs/smoke-test-output.txt`](docs/smoke-test-output.txt), the JaCoCo gate, the contract test, the architecture tests |
+| Backend Test Automation | 80 test classes under `src/test/java` ([`docs/06-test-strategy.md`](docs/06-test-strategy.md)), `scripts/SmokeTest.java` and its recorded output [`docs/smoke-test-output.txt`](docs/smoke-test-output.txt), the JaCoCo gate, the contract test, the architecture tests |
 | Data and Integration Implementation | Flyway migrations in `src/main/resources/db/migration`, [`docs/03-data-model.md`](docs/03-data-model.md), the outbox and its relay in the `integration` module, [`docs/05-integration-design.md`](docs/05-integration-design.md), the ports `PolicyLookup`, `PaymentGateway` and `NotificationChannel` with their adapters, ADRs [0005](docs/adr/0005-transactional-outbox-no-message-broker.md), [0006](docs/adr/0006-at-least-once-delivery-idempotent-consumers.md), [0008](docs/adr/0008-ports-and-adapters-for-external-integrations.md) |
 | Backend Functional Completeness | Every requirement R1 to R13 in [`docs/requirements-traceability.md`](docs/requirements-traceability.md) is implemented with the test classes that cover it; the complete journey (submit, pick up, assess, ask for information, escalate, approve, settle, notify, report) is run end to end by the smoke script (165 steps, all passed on a fresh database) |
 
@@ -604,15 +604,15 @@ java scripts/SmokeTest.java http://localhost:8080   # smoke test against a runni
 
 On Windows use `.\mvnw.cmd`. `JAVA_HOME` must point to JDK 21. The coverage report is `target/site/jacoco/index.html` after `verify`.
 
-**Real results** (last full run against a fresh PostgreSQL database, JDK 21): `mvnw -B clean verify` is BUILD SUCCESS with **1396 tests, 0 failures, 0 errors, 0 skipped** (a parameterised test counts once per case), line coverage **95.58 percent** (2379 of 2489 lines; the gate is 75 percent) and **35 architecture rules**, all passing. The contract test (`OpenApiContractTest`, 2 test methods) was added after that run and passes on its own.
+**Real results** (final run, JDK 21, after the fresh-database verification): `mvnw -B clean verify` is BUILD SUCCESS in 4 minutes 4 seconds with **1398 tests, 0 failures, 0 errors, 0 skipped** (a parameterised test counts once per case), line coverage **95.58 percent** (2379 of 2489 lines; the gate is 75 percent) and **35 architecture rules**, all passing.
 
-**Test pyramid.** The project has 82 test classes, all on H2 in PostgreSQL mode, so no Docker and no running PostgreSQL are needed:
+**Test pyramid.** The project has 80 test classes run by Surefire, all on H2 in PostgreSQL mode, so no Docker and no running PostgreSQL are needed:
 
 | Level | Classes | What it proves |
 |---|---|---|
-| Unit | 43 | Rules in isolation: `ClaimWorkflow` (every allowed and forbidden transition), payout calculation, `MoneyRules`, the report calculators with a fixed clock, event envelopes, services with Mockito for ports |
-| Repository | 3 | `@DataJpaTest` on the real Flyway migrations: constraints, queries, entities against the schema |
-| Integration | 33 | `@SpringBootTest` with MockMvc through the real security chain: journeys, scope, 401, 403 and 404, validation, idempotency, real-thread races on pick-up, settlement and its failure, the relay and idempotent notifications, reports, the OpenAPI document and the contract |
+| Unit | 33 | Rules in isolation: `ClaimWorkflow` (every allowed and forbidden transition), payout calculation, `MoneyRules`, the report calculators with a fixed clock, event envelopes, services with Mockito for ports |
+| Repository | 12 | `@DataJpaTest` on the real Flyway migrations: constraints, queries, entities against the schema |
+| Integration | 32 | `@SpringBootTest` with MockMvc through the real security chain: journeys, scope, 401, 403 and 404, validation, idempotency, real-thread races on pick-up, settlement and its failure, the relay and idempotent notifications, reports, the OpenAPI document and the contract |
 | Architecture | 3 (35 rules) | `ModuleDependencyRulesTest` (module table, cycles, special module rules), `LayerRulesTest` (layers, entities, repositories, ports, `@PreAuthorize` on every protected path), `CodingRulesTest` (no field injection, no standard streams, no generic exceptions, no `javax`) |
 | Smoke (outside Maven) | 1 script, 165 steps | `scripts/SmokeTest.java` against the running application and real PostgreSQL |
 
@@ -622,7 +622,7 @@ On Windows use `.\mvnw.cmd`. `JAVA_HOME` must point to JDK 21. The coverage repo
 |---|---|---|
 | Build and tests | `mvnw -B clean verify` green on JDK 21 | Maven |
 | Line coverage | At least 75 percent for the bundle, excluding request and response records, `config`, the main class and `package-info` | JaCoCo `check` in `pom.xml` |
-| Test count | At least 80 test methods | There are 878 (annotation count of `src/test/java`) |
+| Test count | At least 80 test methods | There are 913: 878 JUnit test methods (`@Test`, `@ParameterizedTest`) and 35 ArchUnit rules (`@ArchTest`), counted from `src/test/java` |
 | Architecture | All 35 rules pass | ArchUnit tests, part of `verify` |
 | Contract | The committed OpenAPI file and the live `/v3/api-docs` have the same paths and methods | `OpenApiContractTest` |
 
