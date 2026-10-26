@@ -44,7 +44,7 @@ Not used, on purpose: a frontend, a message broker, Lombok, Testcontainers, file
 | Swagger UI (short path) | <http://localhost:8080/swagger-ui.html> |
 | OpenAPI JSON | <http://localhost:8080/v3/api-docs> |
 | Health | <http://localhost:8080/actuator/health> |
-| GitHub repository | `https://github.com/<your-username>/claims-management-platform` (replace the placeholder, see Setup) |
+| GitHub repository | https://github.com/nadeemmaldar-007/claims-management-platform|
 | Decisions and assumptions | [`NOTES.md`](NOTES.md) |
 | Design documents | [`docs/`](docs/) |
 | Architecture decision records | [`docs/adr/`](docs/adr/) |
